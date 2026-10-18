@@ -84,39 +84,23 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Synthetic order event producer for Redpanda"
     )
-    parser.add_argument("--rate", type=float, default=50,
+    # Defaults come from env vars (set in docker-compose.yml); explicit CLI
+    # flags always win over env. This keeps one source of truth for defaults.
+    parser.add_argument("--rate", type=float, default=float(os.getenv("RATE", 50)),
                         help="Events per second (default 50, env RATE)")
-    parser.add_argument("--dup-ratio", type=float, default=0.10,
+    parser.add_argument("--dup-ratio", type=float, default=float(os.getenv("DUP_RATIO", 0.10)),
                         help="Duplicate event ratio (default 0.10, env DUP_RATIO)")
-    parser.add_argument("--late-ratio", type=float, default=0.10,
+    parser.add_argument("--late-ratio", type=float, default=float(os.getenv("LATE_RATIO", 0.10)),
                         help="Late event ratio (default 0.10, env LATE_RATIO)")
-    parser.add_argument("--duration", type=int, default=0,
+    parser.add_argument("--duration", type=int, default=int(os.getenv("DURATION", 0)),
                         help="Run for N seconds then exit (0 = forever, env DURATION)")
-    parser.add_argument("--seed", type=int, default=42,
+    parser.add_argument("--seed", type=int, default=int(os.getenv("SEED", 42)),
                         help="RNG seed (default 42, env SEED)")
-    parser.add_argument("--bootstrap", default="redpanda:9092",
+    parser.add_argument("--bootstrap", default=os.getenv("BOOTSTRAP_SERVERS", "redpanda:9092"),
                         help="Bootstrap servers (default redpanda:9092, env BOOTSTRAP_SERVERS)")
-    parser.add_argument("--topic", default="order-events",
+    parser.add_argument("--topic", default=os.getenv("TOPIC", "order-events"),
                         help="Topic name (default order-events, env TOPIC)")
-    return parser.parse_args()
-
-
-def get_env_float(name, default):
-    try:
-        return float(os.getenv(name, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def get_env_int(name, default):
-    try:
-        return int(os.getenv(name, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def get_env_str(name, default):
-    return os.getenv(name, default)
+    return parser.parse_args(argv)
 
 
 def generate_event(rng, now):
@@ -182,13 +166,13 @@ class Producer:
 def main():
     args = parse_args()
 
-    rate = get_env_float("RATE", args.rate) if args.rate == 50 else args.rate
-    dup_ratio = get_env_float("DUP_RATIO", args.dup_ratio) if args.dup_ratio == 0.10 else args.dup_ratio
-    late_ratio = get_env_float("LATE_RATIO", args.late_ratio) if args.late_ratio == 0.10 else args.late_ratio
-    duration = get_env_int("DURATION", args.duration)
-    seed = get_env_int("SEED", args.seed)
-    bootstrap = get_env_str("BOOTSTRAP_SERVERS", args.bootstrap)
-    topic = get_env_str("TOPIC", args.topic)
+    rate = args.rate
+    dup_ratio = args.dup_ratio
+    late_ratio = args.late_ratio
+    duration = args.duration
+    seed = args.seed
+    bootstrap = args.bootstrap
+    topic = args.topic
 
     rng = random.Random(seed)
     producer = Producer(bootstrap)
@@ -204,7 +188,8 @@ def main():
 
     emitted = 0
     duplicated = 0
-    delayed = 0
+    delayed = 0        # late events actually emitted (counted once, at emit time)
+    late_queued = 0    # late events placed in the delay buffer
 
     # Delay buffer: min-heap of (emit_at_timestamp, event_dict, key)
     delay_buffer = []
@@ -227,6 +212,12 @@ def main():
             emitted += 1
 
         if not running:
+            break
+
+        # Stop after the requested duration (0 = run until signalled).
+        if duration > 0 and (now - start) >= duration:
+            logger_info = f"Duration {duration}s reached; stopping producer."
+            print(logger_info, file=sys.stderr)
             break
 
         # Generate a fresh event.
@@ -255,7 +246,7 @@ def main():
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
             emit_at = time.time() + rng.uniform(120, 900)  # 2-15 minutes
             heapq.heappush(delay_buffer, (emit_at, late_event, late_event["order_id"]))
-            delayed += 1  # counted when actually emitted
+            late_queued += 1  # counted again only when actually emitted (delayed)
 
         # Rate limiting.
         if interval > 0:
@@ -276,7 +267,7 @@ def main():
 
     print(
         f"Producer shutdown summary: emitted={emitted} "
-        f"duplicates={duplicated} delayed={delayed} "
+        f"duplicates={duplicated} delayed={delayed} late_queued={late_queued} "
         f"delivery_errors={producer.errors}",
         file=sys.stderr,
     )
