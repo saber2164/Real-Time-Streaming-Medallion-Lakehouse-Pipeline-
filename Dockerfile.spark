@@ -19,15 +19,19 @@ ENV SPARK_VERSION=3.5.3 \
 
 WORKDIR /opt/spark/app
 
-# System deps: openjdk-11 (Spark requires JVM), curl, ca-certificates
+# System deps: JRE (Spark requires a JVM), procps (Spark's launcher calls `ps`),
+# curl + ca-certificates. JAVA_HOME is pointed at a stable, architecture-neutral
+# symlink so the image builds and runs on both amd64 (CI) and arm64 (Apple Silicon).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         openjdk-21-jre-headless \
+        procps \
         curl \
         ca-certificates \
+    && ln -sfn "$(ls -d /usr/lib/jvm/java-21-openjdk-* | head -n1)" /usr/lib/jvm/java-21 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+ENV JAVA_HOME=/usr/lib/jvm/java-21
 
 # Install PySpark + Delta Lake + the matching Kafka connector
 # delta-spark brings pyspark as a dependency; we pin the same Spark version.

@@ -42,6 +42,10 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - Producer Dockerfile copies `requirements.txt` before `pip install` (context is `./producer`).
 
 ### Fixed
+- `Dockerfile.spark`: `JAVA_HOME` now uses an architecture-neutral symlink
+  (`/usr/lib/jvm/java-21`) instead of a hardcoded `java-21-openjdk-arm64` path,
+  so the image runs on both arm64 (Apple Silicon) and amd64 (CI). Also installs
+  `procps` (Spark's launcher calls `ps`). Found by the first cloud run.
 - Producer now enforces `--duration`.
 - Producer `delayed` count is no longer double-counted.
 - Producer CLI env-var defaults honored when a flag is omitted.

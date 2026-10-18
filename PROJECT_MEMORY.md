@@ -108,6 +108,7 @@ late-arriving data must update past hours.
 | Producer `delayed` double-counted | Late events counted at queue time and again at emit time | Count `late_queued` at enqueue; `delayed` only when actually emitted |
 | Env-var defaults ignored when flag omitted | `default=None` overrode env | Defaults read `os.getenv(...)` so env sets defaults and CLI still wins |
 | Quarantine nested inside Silver table path | Default path was `/lakehouse/silver/order_events/_quarantine` | Moved to sibling `/lakehouse/silver/_quarantine` |
+| Cloud run: `spark-submit` fails with `/usr/lib/jvm/java-21-openjdk-arm64/bin/java: No such file or directory` | `Dockerfile.spark` hardcoded the arm64 Java path, which does not exist on amd64 CI runners; `ps` also missing | Point `JAVA_HOME` at an arch-neutral symlink `/usr/lib/jvm/java-21`; install `procps` |
 
 ## Measured Results
 
