@@ -1,0 +1,46 @@
+# Dockerfile.spark
+# PySpark + Delta Lake + Kafka connector, pinned to compatible versions.
+#
+# Compatibility matrix (verified against Delta Lake docs):
+#   Spark 3.5.x  <->  delta-spark 3.x  <->  spark-sql-kafka-0-10_2.12:3.5.x
+# Scala 2.12 is used because Spark 3.5 is built for Scala 2.12.
+#
+# Build: docker-compose build spark
+# Run : docker-compose run --rm spark spark-submit /opt/spark/app/stream_ingestion.py
+
+FROM python:3.9-slim
+
+# Pin exact versions. Keep these in sync with spark/config.py and README.
+ENV SPARK_VERSION=3.5.3 \
+    HADOOP_VERSION=3 \
+    DELTA_SPARK_VERSION=3.2.0 \
+    KAFKA_CONNECTOR_VERSION=3.5.3 \
+    SCALA_VERSION=2.12
+
+WORKDIR /opt/spark/app
+
+# System deps: openjdk-11 (Spark requires JVM), curl, ca-certificates
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openjdk-21-jre-headless \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+
+# Install PySpark + Delta Lake + the matching Kafka connector
+# delta-spark brings pyspark as a dependency; we pin the same Spark version.
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
+        "pyspark==3.5.3" \
+        "delta-spark==3.2.0"
+
+# Add the Spark-Kafka connector jars at runtime via --packages in spark-submit,
+# so the jar version always matches the installed Spark version.
+# The jars are resolved from Maven Central when the job runs.
+
+COPY spark/ /opt/spark/app/
+
+# Default command: keep container alive for interactive debugging
+CMD ["bash"]

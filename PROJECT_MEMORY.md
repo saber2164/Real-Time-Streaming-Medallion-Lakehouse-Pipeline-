@@ -37,10 +37,14 @@ Phase 0: Bootstrap & Memory. Git initialized, folder structure created, PROJECT_
 | Spark (host) | not installed (runs in container) |
 | Disk free | ~329 GiB |
 | Memory | ~3.4G shown (macOS unified; verify via container) |
+| Spark image | p2-spark:latest (built) — Python 3.9-slim, JDK 21, pyspark 3.5.3, delta-spark 3.2.0 |
+| Redpanda image | vectorized/redpanda:v24.3.10 |
+| Console image | redpandaconsole/console:v2.4.15 |
+| kafka connector | org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 (passed via --packages at runtime) |
 
 ## Commands That Worked
 
-- (none yet)
+- `docker-compose build spark` — builds p2-spark:latest successfully
 
 ## Bugs & Fixes
 
