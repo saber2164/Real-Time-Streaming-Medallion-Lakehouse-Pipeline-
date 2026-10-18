@@ -46,9 +46,18 @@ TRIGGER_PROCESSING_TIME = os.getenv("TRIGGER_PROCESSING_TIME", "5 seconds")
 
 # Optional runtime cap for the streaming job, in seconds. 0 (default) = run
 # until signalled, the normal always-on mode. Set to a positive value for a
-# bounded CI / cloud run: the job drains the topic and then stops itself
-# gracefully, so a runner exits cleanly instead of hanging.
+# bounded CI / cloud run as a SAFETY BACKSTOP (hard upper bound), so a runner
+# can never hang. Prefer STREAM_IDLE_TIMEOUT_SECONDS for correctness: a fixed
+# cap can cut the run off before the Bronze -> Silver cascade has drained.
 STREAM_MAX_SECONDS = int(os.getenv("STREAM_MAX_SECONDS", "0"))
+
+# Drain-aware graceful stop, in seconds. 0 (default) = disabled. When > 0, once
+# the queries have processed at least one batch and then produce no new input
+# rows for this many seconds, the job stops itself. This lets a bounded run
+# fully drain (all Kafka rows -> Bronze -> Silver) before exiting, instead of
+# racing a wall-clock cap. Safe because the producer emits continuously, so a
+# real gap of this length means the source is genuinely finished.
+STREAM_IDLE_TIMEOUT_SECONDS = int(os.getenv("STREAM_IDLE_TIMEOUT_SECONDS", "0"))
 
 # ---------------------------------------------------------------------------
 # Gold layer

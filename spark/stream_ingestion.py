@@ -35,10 +35,12 @@ How to run
         spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
         /opt/spark/app/stream_ingestion.py
 
-For a bounded (CI / cloud) run, set STREAM_MAX_SECONDS so the job stops itself
-after draining:
+For a bounded (CI / cloud) run, set STREAM_IDLE_TIMEOUT_SECONDS so the job
+drains the whole pipeline and then stops itself (STREAM_MAX_SECONDS is only a
+wall-clock safety backstop):
 
-    docker-compose run --rm -e STREAM_MAX_SECONDS=180 spark \
+    docker-compose run --rm -e STREAM_IDLE_TIMEOUT_SECONDS=45 \
+        -e STREAM_MAX_SECONDS=600 spark \
         spark-submit --packages ... /opt/spark/app/stream_ingestion.py
 
 Key design choices
@@ -97,6 +99,7 @@ from config import (  # noqa: E402
     DEDUP_KEYS,
     TRIGGER_PROCESSING_TIME,
     STREAM_MAX_SECONDS,
+    STREAM_IDLE_TIMEOUT_SECONDS,
 )
 
 logging.basicConfig(
@@ -354,26 +357,72 @@ def handle_signal(signum, frame):
     sys.exit(0)
 
 
-def start_runtime_cap(seconds: int):
-    """Stop all queries after `seconds` (if > 0) so bounded runs exit cleanly.
+def _total_input_rows():
+    """Sum numInputRows across the active queries' last micro-batches."""
+    total = 0
+    for q in ACTIVE_QUERIES:
+        progress = q.lastProgress
+        if progress:
+            total += progress.get("numInputRows", 0) or 0
+    return total
 
-    Used by the GitHub Actions cloud demo (and any scheduled/CI run) so the
-    streaming job drains the topic and then terminates by itself, instead of
-    streaming forever. Returns the timer thread, or None when disabled.
+
+def start_stop_supervisor(max_seconds: int, idle_seconds: int):
+    """Stop the streaming job cleanly for bounded (CI / cloud) runs.
+
+    Two independent conditions, either of which stops all queries:
+
+    * ``idle_seconds`` > 0 (preferred): stop once at least one row has been
+      processed and then no new input rows arrive for that long. This drains
+      the whole pipeline (Kafka -> Bronze -> Silver) *before* exiting.
+    * ``max_seconds`` > 0: a wall-clock safety backstop, so the job can never
+      hang forever. Use it generously; the idle check is what normally fires.
+
+    Returns the supervisor thread, or None when both are disabled.
     """
-    if seconds <= 0:
-        logger.info("No runtime cap set (STREAM_MAX_SECONDS=0); streaming until signalled.")
+    if max_seconds <= 0 and idle_seconds <= 0:
+        logger.info(
+            "No bounded-run stop configured (STREAM_MAX_SECONDS=0, "
+            "STREAM_IDLE_TIMEOUT_SECONDS=0); streaming until signalled."
+        )
         return None
 
     def _runner():
-        logger.info("Runtime cap set: will stop gracefully after %s seconds.", seconds)
-        time.sleep(seconds)
-        logger.info("Runtime cap reached; stopping streaming queries gracefully.")
+        start = time.time()
+        last_change = time.time()
+        last_total = 0
+        seen_data = False
+        logger.info(
+            "Bounded run: idle_timeout=%ss (preferred), max_seconds=%ss (backstop).",
+            idle_seconds, max_seconds,
+        )
+        while True:
+            time.sleep(5)
+            if not ACTIVE_QUERIES:
+                return
+            total = _total_input_rows()
+            if total > 0:
+                seen_data = True
+            if total != last_total:
+                last_total = total
+                last_change = time.time()
+            now = time.time()
+            if idle_seconds > 0 and seen_data and (now - last_change) >= idle_seconds:
+                logger.info(
+                    "No new input rows for %ss after processing %s rows; draining "
+                    "complete, stopping queries.", idle_seconds, total,
+                )
+                break
+            if max_seconds > 0 and (now - start) >= max_seconds:
+                logger.info(
+                    "Runtime backstop (%ss) reached; stopping queries.", max_seconds
+                )
+                break
         stop_all_queries()
 
-    timer = threading.Thread(target=_runner, daemon=True, name="runtime-cap")
-    timer.start()
-    return timer
+    supervisor = threading.Thread(target=_runner, daemon=True, name="stop-supervisor")
+    supervisor.start()
+    return supervisor
 
 
 def main():
@@ -409,8 +458,8 @@ def main():
     t = threading.Thread(target=progress_logger, daemon=True)
     t.start()
 
-    # Optional bounded run (CI / cloud): stop all queries after N seconds.
-    start_runtime_cap(STREAM_MAX_SECONDS)
+    # Bounded run (CI / cloud): drain-aware stop with a safety backstop.
+    start_stop_supervisor(STREAM_MAX_SECONDS, STREAM_IDLE_TIMEOUT_SECONDS)
 
     logger.info("Streaming ingestion running. Awaiting termination...")
     spark.streams.awaitAnyTermination()

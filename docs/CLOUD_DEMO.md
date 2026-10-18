@@ -64,7 +64,8 @@ You can override:
 | `duration` | producer duration in seconds | `60` |
 | `rate` | events per second | `50` |
 | `seed` | RNG seed (reproducible data) | `42` |
-| `stream_seconds` | hard cap before the stream stops itself | `180` |
+| `stream_seconds` | safety backstop before the stream stops itself | `600` |
+| `idle_seconds` | stop once no new rows arrive for this long (full drain) | `45` |
 
 **From the showcase page:** click **“Run it in the cloud (free)”**, then
 **Run workflow**.
@@ -74,15 +75,26 @@ You can override:
 ## Why the stream stops by itself
 
 A streaming job normally runs forever. On a CI runner that would hang the job.
-So `spark/stream_ingestion.py` gained an optional, documented switch:
+So `spark/stream_ingestion.py` gained two optional, documented switches:
 
 ```bash
-# stop gracefully after 180 seconds (drains the topic first)
--e STREAM_MAX_SECONDS=180
+-e STREAM_IDLE_TIMEOUT_SECONDS=45   # preferred: stop after the pipeline goes idle
+-e STREAM_MAX_SECONDS=600           # safety backstop: hard wall-clock upper bound
 ```
 
-`STREAM_MAX_SECONDS=0` (the default) keeps the original always-on behaviour for
-local use. This is the only code change needed to make the pipeline
+- **`STREAM_IDLE_TIMEOUT_SECONDS` (preferred).** Once at least one batch has been
+  processed and then **no new input rows arrive for this many seconds**, the job
+  stops itself. Because the producer emits continuously, a gap of this length
+  means the source really is finished — so the whole Kafka → Bronze → Silver
+  cascade **drains fully** before exit.
+- **`STREAM_MAX_SECONDS`** is only a backstop so a runner can never hang forever.
+  A fixed cap alone is *not* enough: an early cloud run used only a time cap and
+  exited while Bronze→Silver was still catching up (Silver had 2879 rows instead
+  of the full 3018), even though the producer output was identical. Drain-aware
+  stopping fixes that.
+
+Both default to `0` (disabled), preserving the original always-on behaviour for
+local use. These are the only code changes needed to make the pipeline
 CI/cloud-friendly.
 
 ---

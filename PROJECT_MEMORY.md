@@ -62,6 +62,7 @@ late-arriving data must update past hours.
 | 2026-10-18 | Recovery test on an isolated topic/paths | reuse `order-events` | Avoids polluting the canonical measured dataset |
 | 2026-10-18 | Cloud demo runs on **GitHub Actions** (`workflow_dispatch`), button links to the run page | Static-page one-click via a token/backend | Pages is static and a browser must not hold a secret; Actions is free, and GitHub login is the safety gate. One-click upgrade documented in `docs/CLOUD_DEMO.md` |
 | 2026-10-18 | Add `STREAM_MAX_SECONDS` (bounded run) | kill the container in CI | Lets the streaming job drain and exit cleanly so a cloud runner does not hang; default 0 preserves always-on local mode |
+| 2026-10-18 | Drain-aware stop via `STREAM_IDLE_TIMEOUT_SECONDS`; `STREAM_MAX_SECONDS` demoted to backstop | a fixed wall-clock cap | The first cloud run proved a time cap can exit mid-cascade (Silver 2879, not the full 3018) even with identical producer output. Idle detection drains Kafka → Bronze → Silver fully first |
 
 ## Environment Facts
 

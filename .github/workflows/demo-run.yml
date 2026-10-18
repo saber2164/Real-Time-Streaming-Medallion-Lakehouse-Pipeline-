@@ -19,9 +19,13 @@ on:
         required: false
         default: "42"
       stream_seconds:
-        description: "Max seconds the streaming job runs before it stops itself"
+        description: "Safety backstop: hard max seconds the streaming job may run"
         required: false
-        default: "180"
+        default: "600"
+      idle_seconds:
+        description: "Stop once no new rows arrive for this long (full drain)"
+        required: false
+        default: "45"
 
 # One demo at a time; queue rather than cancel so runs are reproducible.
 concurrency:
@@ -41,6 +45,7 @@ jobs:
       RATE: ${{ github.event.inputs.rate }}
       SEED: ${{ github.event.inputs.seed }}
       STREAM_SECONDS: ${{ github.event.inputs.stream_seconds }}
+      IDLE_SECONDS: ${{ github.event.inputs.idle_seconds }}
 
     steps:
       - name: Checkout
@@ -69,6 +74,7 @@ jobs:
       - name: Start streaming ingestion (detached, bounded)
         run: |
           docker compose run -d -T --no-deps --name p2-ingest \
+            -e STREAM_IDLE_TIMEOUT_SECONDS="${IDLE_SECONDS}" \
             -e STREAM_MAX_SECONDS="${STREAM_SECONDS}" \
             spark spark-submit \
             --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
@@ -82,7 +88,7 @@ jobs:
 
       - name: Wait for ingestion to drain and stop
         run: |
-          for _ in $(seq 1 120); do
+          for _ in $(seq 1 200); do
             state=$(docker inspect -f '{{.State.Running}}' p2-ingest 2>/dev/null || echo gone)
             [ "$state" = "false" ] && break
             [ "$state" = "gone" ] && break
@@ -128,7 +134,7 @@ jobs:
           {
             echo "## Cloud demo run results"
             echo ""
-            echo "Inputs: duration=\`${DURATION}s\` rate=\`${RATE}/s\` seed=\`${SEED}\` stream_cap=\`${STREAM_SECONDS}s\`"
+            echo "Inputs: duration=\`${DURATION}s\` rate=\`${RATE}/s\` seed=\`${SEED}\` idle_stop=\`${IDLE_SECONDS}s\` backstop=\`${STREAM_SECONDS}s\`"
             echo ""
             for f in verify_silver_dedup.txt verify_bronze_offsets.txt verify_gold.txt; do
               if [ -f "$f" ]; then
