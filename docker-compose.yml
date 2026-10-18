@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   ###############################################################################
   # Redpanda — Kafka API-compatible broker (C++, no JVM, no ZooKeeper)
@@ -8,7 +6,7 @@ services:
   #   external  localhost:19092 -> used by host-side tools (rpk, console from host)
   ###############################################################################
   redpanda:
-    image: docker.redpanda.com/vectorized/redpanda:v24.3.10
+    image: redpandadata/redpanda:v24.3.10
     command:
       - redpanda start
       - --smp 1
@@ -22,10 +20,9 @@ services:
       - --advertise-rpc-addr redpanda:33145
     ports:
       - "19092:19092"   # external Kafka API for host tools
-      - "9092:9092"     # internal Kafka API (also reachable from host for convenience)
       - "8081:8081"     # Redpanda RPC / admin (not used by app)
     healthcheck:
-      test: ["CMD", "rpk", "cluster", "health", "--dry-until-ready"]
+      test: ["CMD", "rpk", "topic", "list", "--brokers", "redpanda:9092"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -39,15 +36,14 @@ services:
   # Redpanda Console — web UI for the broker
   ###############################################################################
   console:
-    image: docker.redpanda.com/redpandaconsole/console:v2.4.15
+    image: redpandadata/console:v2.8.4
     depends_on:
       redpanda:
         condition: service_healthy
-    environment:
-      CONFIGURATION__REDPANDA__0__BROKERS: redpanda:9092
-      CONFIGURATION__REDPANDA__0__SCHEMA_REGISTRY: http://redpanda:8081
-      CONFIGURATION__KAFKA__ENABLE_STATS: "true"
-      CONFIGURATION__GENERAL__SITE_URL: http://localhost:8080
+    # Image ENTRYPOINT is `./console` (workdir /app); pass only the flags.
+    command: ["-config.filepath", "/config/console.yaml"]
+    volumes:
+      - ./console.yaml:/config/console.yaml:ro
     ports:
       - "8080:8080"
     networks:
@@ -58,18 +54,17 @@ services:
   # Runs once after Redpanda is healthy, then exits.
   ###############################################################################
   topic-init:
-    image: docker.redpanda.com/vectorized/redpanda:v24.3.10
+    image: redpandadata/redpanda:v24.3.10
     depends_on:
       redpanda:
         condition: service_healthy
+    # Idempotent: create the topic, or (if it already exists) verify it exists
+    # so the container exits 0 and `spark` can wait on completion.
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - rpk
-      - topic
-      - create
-      - order-events
-      - --partitions 3
-      - --replicas 1
-      - --brokers redpanda:9092
+      - >
+        rpk topic create order-events --partitions 3 --replicas 1 --brokers redpanda:9092
+        || rpk topic describe order-events --brokers redpanda:9092 >/dev/null
     networks:
       - lakehouse-net
     restart: "no"
@@ -101,6 +96,9 @@ services:
       - ./lakehouse:/lakehouse
       - ./checkpoints:/checkpoints
       - ./spark:/opt/spark/app
+      - ./scripts:/opt/spark/scripts:ro
+      - ./tests:/opt/spark/tests:ro
+      - ./.ivy2:/root/.ivy2   # cache --packages jars across runs
     networks:
       - lakehouse-net
     tty: true
