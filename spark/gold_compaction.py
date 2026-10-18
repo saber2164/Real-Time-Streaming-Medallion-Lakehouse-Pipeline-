@@ -100,18 +100,56 @@ def table_exists(spark: SparkSession, path: str) -> bool:
         return False
 
 
+def active_files(spark: SparkSession, path: str):
+    """Return (numFiles, sizeInBytes) of *active* files from the Delta log.
+
+    This is the number that matters for read cost. Physical files on disk can
+    be higher because OPTIMIZE tombstone-replaces files; they are only removed
+    by VACUUM after the retention window (default 7 days).
+    """
+    row = spark.sql(f"DESCRIBE DETAIL delta.`{path}`").collect()[0]
+    return row["numFiles"], row["sizeInBytes"]
+
+
 def run_optimize(spark: SparkSession, path: str, zorder_col: str):
-    """Run OPTIMIZE ... ZORDER BY on a Delta table and log history."""
+    """Run OPTIMIZE ... ZORDER BY on a Delta table, logging before/after files."""
+    before_files, before_bytes = active_files(spark, path)
+    logger.info(
+        "OPTIMIZE BEFORE %s: active_files=%s size=%s bytes",
+        path, before_files, f"{before_bytes:,}",
+    )
+
     if zorder_col:
         spark.sql(f"OPTIMIZE delta.`{path}` ZORDER BY ({zorder_col})")
     else:
         spark.sql(f"OPTIMIZE delta.`{path}`")
     logger.info("Ran OPTIMIZE on %s%s", path, f" ZORDER BY ({zorder_col})" if zorder_col else "")
 
+    after_files, after_bytes = active_files(spark, path)
+    avg_before = (before_bytes / before_files) if before_files else 0
+    avg_after = (after_bytes / after_files) if after_files else 0
+    logger.info(
+        "OPTIMIZE AFTER  %s: active_files=%s size=%s bytes",
+        path, after_files, f"{after_bytes:,}",
+    )
+    logger.info(
+        "OPTIMIZE RESULT %s: files %s->%s, avg file %s->%s bytes",
+        path, before_files, after_files, f"{avg_before:,.0f}", f"{avg_after:,.0f}",
+    )
+
     history = spark.sql(f"DESCRIBE HISTORY delta.`{path}`").collect()
     logger.info("DESCRIBE HISTORY for %s:", path)
     for row in history[:5]:
-        logger.info("  version=%s operation=%s timestamp=%s", row.version, row.operation, row.timestamp)
+        metrics = row["operationMetrics"] or {}
+        keep = {
+            k: metrics[k]
+            for k in ("numFiles", "numAddedFiles", "numRemovedFiles")
+            if k in metrics
+        }
+        logger.info(
+            "  version=%s operation=%s timestamp=%s metrics=%s",
+            row.version, row.operation, row.timestamp, keep,
+        )
 
 
 def main():

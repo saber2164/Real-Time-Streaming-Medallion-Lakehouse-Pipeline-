@@ -7,7 +7,8 @@ Purpose
 -------
 Consume raw order events from the Redpanda `order-events` topic, land them
 verbatim (plus Kafka metadata) into the Bronze Delta table, then parse,
-deduplicate, and write cleansed events to the Silver Delta table.
+deduplicate, and write cleansed events to the Silver Delta table by reading
+Bronze back as a Delta *stream*.
 
 Inputs
 ------
@@ -15,6 +16,7 @@ Inputs
   JSON payload per doc v2 §3.A:
     event_id, order_id, customer_id, seller_id, region, event_type,
     price, freight_value, payment_type, event_time
+- Bronze Delta table (streamed) at BRONZE_PATH for the Silver query.
 
 Outputs
 -------
@@ -25,25 +27,27 @@ Outputs
   Columns: event_id, order_id, customer_id, seller_id, region, event_type,
            price, freight_value, payment_type, event_time (TIMESTAMP),
            event_date (DATE), total_amount (= price + freight_value)
-- Quarantine: /lakehouse/silver/order_events/_quarantine (unparseable rows)
+- Quarantine: /lakehouse/silver/_quarantine (unparseable rows)
 
 How to run
 ----------
     docker-compose run --rm spark \
-        spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0,io.delta:delta-storage:3.2.0 \
+        spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
         /opt/spark/app/stream_ingestion.py
 
 Key design choices
 ------------------
 - Bronze is append-only and never mutated (replayable source of truth).
-- Silver reads from the Bronze Delta stream (not Kafka directly) so Bronze is
-  the single source of truth and Silver can be rebuilt by replaying Bronze.
+- Layer wiring (doc v2 Part 2): **Silver reads the Bronze Delta stream**, not
+  Kafka directly. One Kafka consumption feeds Bronze only; Silver is derived
+  from Bronze. This keeps Kafka offsets owned by a single query (no double
+  consumption), and lets Silver be rebuilt by replaying Bronze.
 - Dedup key = ["event_id", "event_time"] with a 10-minute watermark. event_id
   is the true identity (producer deliberately duplicates it); event_time must
   be in the key so Spark can expire state (otherwise state grows unbounded).
 - Unparseable JSON rows are routed to a quarantine path instead of being
   dropped silently.
-- Separate checkpointLocation per query (Bronze vs Silver), never shared.
+- Separate checkpointLocation per query (Bronze vs Silver vs quarantine).
 - Graceful stop on SIGTERM.
 """
 
@@ -58,13 +62,14 @@ from pyspark.sql.functions import (
     from_json,
     to_date,
     current_date,
-    struct,
 )
 from pyspark.sql.types import (
     StructType,
     StructField,
     StringType,
     DoubleType,
+    IntegerType,
+    LongType,
     TimestampType,
     DateType,
 )
@@ -141,13 +146,22 @@ def define_event_schema() -> StructType:
     )
 
 
-def read_bronze_stream(spark: SparkSession):
-    """Read from Kafka and write raw bytes + metadata to Bronze Delta.
+def define_bronze_schema() -> StructType:
+    """Explicit StructType for the Bronze table (raw payload + Kafka metadata)."""
+    return StructType(
+        [
+            StructField("raw_payload", StringType(), True),
+            StructField("kafka_partition", IntegerType(), True),
+            StructField("kafka_offset", LongType(), True),
+            StructField("kafka_timestamp", TimestampType(), True),
+            StructField("ingest_date", DateType(), True),
+        ]
+    )
 
-    Returns the Bronze streaming query (still running).
-    """
+
+def read_kafka_stream(spark: SparkSession):
+    """Read the Kafka topic as an unbounded DataFrame shaped like Bronze."""
     logger.info("Reading Kafka topic %s from %s", KAFKA_TOPIC, KAFKA_BOOTSTRAP_SERVERS)
-
     kafka_df = (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
@@ -156,15 +170,31 @@ def read_bronze_stream(spark: SparkSession):
         .option("failOnDataLoss", "false")
         .load()
     )
-
-    # Select the raw value (STRING) plus Kafka metadata columns.
-    bronze_df = kafka_df.selectExpr(
+    return kafka_df.selectExpr(
         "CAST(value AS STRING) AS raw_payload",
         "partition AS kafka_partition",
         "offset AS kafka_offset",
         "CAST(timestamp AS TIMESTAMP) AS kafka_timestamp",
     ).withColumn("ingest_date", current_date())
 
+
+def ensure_bronze_table(spark: SparkSession) -> None:
+    """Create an empty Bronze Delta table if it does not exist yet.
+
+    Silver reads Bronze as a Delta *stream*, so Bronze must be a valid Delta
+    table before the Silver query starts. Creating it empty first makes the
+    two queries independent of start order and is idempotent across restarts.
+    """
+    if os.path.exists(os.path.join(BRONZE_PATH, "_delta_log")):
+        logger.info("Bronze table already exists at %s", BRONZE_PATH)
+        return
+    empty = spark.createDataFrame([], define_bronze_schema())
+    empty.write.format("delta").mode("overwrite").save(BRONZE_PATH)
+    logger.info("Created empty Bronze Delta table at %s", BRONZE_PATH)
+
+
+def write_bronze_stream(bronze_df):
+    """Write the Kafka stream to Bronze Delta (append mode, own checkpoint)."""
     bronze_query = (
         bronze_df.writeStream.format("delta")
         .outputMode("append")
@@ -174,7 +204,6 @@ def read_bronze_stream(spark: SparkSession):
         .queryName("bronze_order_events")
         .start()
     )
-
     logger.info(
         "Bronze query started: path=%s checkpoint=%s",
         BRONZE_PATH,
@@ -183,24 +212,34 @@ def read_bronze_stream(spark: SparkSession):
     return bronze_query
 
 
+def read_bronze_delta_stream(spark: SparkSession):
+    """Read the Bronze Delta table as a streaming source (Silver's input)."""
+    logger.info("Reading Bronze Delta stream from %s", BRONZE_PATH)
+    return (
+        spark.readStream.format("delta")
+        .option("startingVersion", "0")  # replay all Bronze history on a fresh start
+        .option("ignoreDeletes", "true")
+        .load(BRONZE_PATH)
+    )
+
+
 def build_silver_stream(bronze_df):
-    """Parse Bronze stream, dedup, and write to Silver Delta.
+    """Parse the Bronze stream, dedup, and write to Silver Delta (+ quarantine).
 
     Steps:
       1. Parse raw_payload JSON with an explicit StructType.
-      2. Cast event_time to TIMESTAMP (already typed by the schema).
+      2. Split rows into good (parsed) vs quarantine (unparseable).
       3. withWatermark("event_time", "10 minutes") — bounds state for dedup.
       4. dropDuplicates(["event_id", "event_time"]) — stateful dedup.
       5. Add derived columns: event_date, total_amount = price + freight_value.
-      6. Split parse failures into the quarantine path; write good rows to Silver.
+      6. Write good rows to Silver; write bad rows to the quarantine path.
 
-    Returns the Silver streaming query.
+    Returns (silver_query, quarantine_query).
     """
     schema = define_event_schema()
 
     parsed = (
         bronze_df.withColumn("parsed", from_json(col("raw_payload"), schema))
-        # Keep rows where parsing succeeded (parsed.event_id is not null).
         .selectExpr(
             "parsed.event_id",
             "parsed.order_id",
@@ -274,17 +313,18 @@ def log_progress(query):
         "PROGRESS %s: inputRows=%s inputRowsPerSecond=%s "
         "stateOperators=%s batchDurationMs=%s",
         query.name,
-        progress.numInputRows,
-        progress.inputRowsPerSecond,
-        len(progress.stateOperators) if progress.stateOperators else 0,
-        progress.durationMs.get("addExecutionTimeMs") if progress.durationMs else None,
+        progress.get("numInputRows"),
+        progress.get("inputRowsPerSecond"),
+        len(progress.get("stateOperators") or []),
+        (progress.get("durationMs") or {}).get("addBatch"),
     )
-    for so in progress.stateOperators or []:
+    for so in progress.get("stateOperators") or []:
         logger.info(
-            "STATE %s: numRowsTotal=%s numUpdatedRows=%s",
-            so.name,
-            so.numRowsTotal,
-            so.numUpdatedRows,
+            "STATE %s: numRowsTotal=%s numUpdatedRows=%s numRowsRemoved=%s",
+            so.get("operatorName"),
+            so.get("numRowsTotal"),
+            so.get("numUpdatedRows"),
+            so.get("numRowsRemoved"),
         )
 
 
@@ -307,33 +347,22 @@ def main():
     spark = build_spark_session("medallion-bronze-silver-ingestion")
     spark.sparkContext.setLogLevel("WARN")
 
-    bronze_query = read_bronze_stream(spark)
+    # 1. Make sure Bronze exists so Silver can read it as a Delta stream.
+    ensure_bronze_table(spark)
+
+    # 2. One Kafka consumption -> Bronze.
+    bronze_df = read_kafka_stream(spark)
+    bronze_query = write_bronze_stream(bronze_df)
     ACTIVE_QUERIES.append(bronze_query)
 
-    # Silver reads from the Bronze DataFrame (the same streaming source), so a
-    # single Kafka consumption feeds both Bronze and Silver (fan-out).
-    # Note: bronze_df is the unbounded streaming DataFrame from read_bronze_stream.
-    # Re-derive it here to feed Silver.
-    kafka_df = (
-        spark.readStream.format("kafka")
-        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
-        .option("subscribe", KAFKA_TOPIC)
-        .option("startingOffsets", KAFKA_STARTING_OFFSETS)
-        .option("failOnDataLoss", "false")
-        .load()
-    )
-    bronze_df = kafka_df.selectExpr(
-        "CAST(value AS STRING) AS raw_payload",
-        "partition AS kafka_partition",
-        "offset AS kafka_offset",
-        "CAST(timestamp AS TIMESTAMP) AS kafka_timestamp",
-    ).withColumn("ingest_date", current_date())
-
-    silver_query, quarantine_query = build_silver_stream(bronze_df)
+    # 3. Silver is derived from the Bronze Delta stream (not Kafka).
+    bronze_delta_stream = read_bronze_delta_stream(spark)
+    silver_query, quarantine_query = build_silver_stream(bronze_delta_stream)
     ACTIVE_QUERIES.extend([silver_query, quarantine_query])
 
     # Log progress every 30 seconds while streaming.
     import threading
+    import time
 
     def progress_logger():
         while True:
@@ -342,9 +371,6 @@ def main():
                     log_progress(q)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("Progress log skipped for %s: %s", q.name, exc)
-            # sleep 30s but remain responsive to shutdown
-            import time
-
             time.sleep(30)
 
     t = threading.Thread(target=progress_logger, daemon=True)

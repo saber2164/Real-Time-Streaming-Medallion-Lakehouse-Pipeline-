@@ -25,7 +25,9 @@ CHECKPOINT_BASE = os.getenv("CHECKPOINT_BASE", "/checkpoints")
 
 BRONZE_CHECKPOINT = os.path.join(CHECKPOINT_BASE, "bronze")
 SILVER_CHECKPOINT = os.path.join(CHECKPOINT_BASE, "silver")
-QUARANTINE_PATH = os.path.join(SILVER_PATH, "_quarantine")
+# Quarantine lives as a *sibling* of the Silver table (not nested inside it) so
+# Delta does not treat it as a sub-directory of the Silver table.
+QUARANTINE_PATH = os.getenv("QUARANTINE_PATH", "/lakehouse/silver/_quarantine")
 
 # ---------------------------------------------------------------------------
 # Streaming / watermark settings
