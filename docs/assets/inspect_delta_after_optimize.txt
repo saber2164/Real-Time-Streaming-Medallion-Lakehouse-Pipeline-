@@ -1,0 +1,78 @@
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+
+========================================================================
+BRONZE   /lakehouse/bronze/order_events
+========================================================================
+  rows            : 3277
+  active files    : 1   (from _delta_log)
+  active bytes    : 210,156
+  avg active file : 210,156 bytes
+  physical files  : 5   (incl. tombstoned, pre-VACUUM)
+  physical bytes  : 431,393
+  avg physical    : 86,279 bytes
+  schema          :
+      raw_payload      StringType()
+      kafka_partition  IntegerType()
+      kafka_offset     LongType()
+      kafka_timestamp  TimestampType()
+      ingest_date      DateType()
+  last history (version op metrics):
+      v2 op=OPTIMIZE ts=2026-10-18 17:24:49.377000 {'numAddedFiles': '1', 'numRemovedFiles': '3'}
+      v1 op=STREAMING UPDATE ts=2026-10-18 17:22:02.014000 {'numOutputRows': '3277', 'numAddedFiles': '3', 'numRemovedFiles': '0'}
+      v0 op=WRITE ts=2026-10-18 17:21:57.841000 {'numFiles': '1', 'numOutputRows': '0'}
+
+========================================================================
+SILVER   /lakehouse/silver/order_events
+========================================================================
+  rows            : 3018
+  active files    : 1   (from _delta_log)
+  active bytes    : 128,692
+  avg active file : 128,692 bytes
+  physical files  : 7   (incl. tombstoned, pre-VACUUM)
+  physical bytes  : 293,536
+  avg physical    : 41,934 bytes
+  schema          :
+      event_id         StringType()
+      order_id         StringType()
+      customer_id      StringType()
+      seller_id        StringType()
+      region           StringType()
+      event_type       StringType()
+      price            DoubleType()
+      freight_value    DoubleType()
+      payment_type     StringType()
+      event_time       TimestampType()
+      kafka_partition  IntegerType()
+      kafka_offset     LongType()
+      kafka_timestamp  TimestampType()
+      ingest_date      DateType()
+      event_date       DateType()
+      total_amount     DoubleType()
+  last history (version op metrics):
+      v3 op=OPTIMIZE ts=2026-10-18 17:24:50.058000 {'numAddedFiles': '1', 'numRemovedFiles': '4'}
+      v2 op=STREAMING UPDATE ts=2026-10-18 17:22:11.056000 {'numOutputRows': '0', 'numAddedFiles': '0', 'numRemovedFiles': '0'}
+      v1 op=STREAMING UPDATE ts=2026-10-18 17:22:07.362000 {'numOutputRows': '3018', 'numAddedFiles': '4', 'numRemovedFiles': '0'}
+      v0 op=STREAMING UPDATE ts=2026-10-18 17:21:59.352000 {'numOutputRows': '0', 'numAddedFiles': '0', 'numRemovedFiles': '0'}
+
+========================================================================
+GOLD     /lakehouse/gold/hourly_sales
+========================================================================
+  rows            : 60
+  active files    : 1   (from _delta_log)
+  active bytes    : 4,142
+  avg active file : 4,142 bytes
+  physical files  : 2   (incl. tombstoned, pre-VACUUM)
+  physical bytes  : 8,284
+  avg physical    : 4,142 bytes
+  schema          :
+      hour_start       TimestampType()
+      seller_id        StringType()
+      payment_type     StringType()
+      hourly_order_count LongType()
+      total_revenue    DoubleType()
+      total_freight    DoubleType()
+      avg_freight_cost DoubleType()
+      event_date       DateType()
+  last history (version op metrics):
+      v1 op=OPTIMIZE ts=2026-10-18 17:24:47.742000 {'numAddedFiles': '1', 'numRemovedFiles': '1'}
+      v0 op=WRITE ts=2026-10-18 17:24:46.164000 {'numFiles': '1', 'numOutputRows': '60'}

@@ -1,0 +1,36 @@
+[recovery] Resetting recovery artifacts...
+TOPIC                  STATUS
+order-events-recovery  OK
+[recovery] Created topic order-events-recovery (3 partitions)
+[recovery] Starting producer: duration=45s rate=100/s seed=7
+[recovery] Stream container p2-recovery-stream started
+[recovery] Killing stream container mid-stream (SIGKILL)...
+[recovery] Stream killed (progress log lines seen before kill: 0)
+[recovery] Restarting stream (recovery from checkpoint)...
+[recovery] Stream container p2-recovery-stream started
+[recovery] Stopping stream gracefully...
+[recovery] Running assertions (verify_silver_dedup.py, verify_bronze_offsets.py)...
+========================================================================
+RECOVERY TEST EVIDENCE (2026-10-18T17:28:14Z)
+  topic=order-events-recovery bronze=/lakehouse/bronze/recovery silver=/lakehouse/silver/recovery
+  producer: duration=45s rate=100/s seed=7
+  kill point: after 12s of streaming; restart, then drain
+========================================================================
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Silver rows                 : 4315
+Distinct event_id           : 4315
+Distinct (event_id, time)   : 4315
+Rows with bad total_amount  : 0
+
+PASS verify_silver_dedup: zero duplicate event_id; total_amount correct
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+partition | min   | max   | rows | distinct | contiguous
+    0     | 0     | 1681  | 1682 | 1682     | True
+    1     | 0     | 1808  | 1809 | 1809     | True
+    2     | 0     | 1423  | 1424 | 1424     | True
+
+PASS verify_bronze_offsets: contiguous offsets, no gaps or repeats
+dedup_exit_code=0
+offsets_exit_code=0
+
+PASS verify_recovery: Silver has zero duplicate event_id and Bronze offsets are contiguous after an ungraceful crash.

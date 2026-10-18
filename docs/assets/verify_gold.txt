@@ -1,0 +1,9 @@
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+[verify_gold] independent groups = 60
+[verify_gold] gold rows          = 60
+[verify_gold] duplicate grain keys = 0
+[verify_gold] order_count  gold=1055 independent=1055
+[verify_gold] total_revenue gold=269805.58 independent=269805.58
+[verify_gold] mismatched groups = 0
+
+[verify_gold] PASS: gold matches independent recomputation from silver

@@ -1,0 +1,7 @@
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+partition | min   | max   | rows | distinct | contiguous
+    0     | 0     | 1681  | 1682 | 1682     | True
+    1     | 0     | 1808  | 1809 | 1809     | True
+    2     | 0     | 1423  | 1424 | 1424     | True
+
+PASS verify_bronze_offsets: contiguous offsets, no gaps or repeats
