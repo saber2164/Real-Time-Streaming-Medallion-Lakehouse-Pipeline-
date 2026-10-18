@@ -45,6 +45,11 @@ Phase 0: Bootstrap & Memory. Git initialized, folder structure created, PROJECT_
 ## Commands That Worked
 
 - `docker-compose build spark` — builds p2-spark:latest successfully
+- `python3 tests/test_producer_logic.py` — 5/5 producer unit tests pass
+
+## Measured Results
+
+- (none yet - producer not yet run against live Redpanda)
 
 ## Bugs & Fixes
 
