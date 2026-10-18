@@ -8,6 +8,13 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 ## [Unreleased]
 
 ### Added
+- `docs/ARCHITECTURE.md`: layered architecture, data contracts, Bronze/Silver/Gold
+  grain, streaming topology, recovery model.
+- `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 19 design
+  Q&A (watermarks, dedup, read-from-Delta, Gold overwrite, Z-order, recovery).
+- `docs/RUNBOOK.md`: bring-up, measured run order, verification, teardown, troubleshooting.
+- `docs/index.html`: self-contained showcase page (light/dark, inline SVG, OpenGraph).
+- `LICENSE` (MIT).
 - `spark/stream_ingestion.py`: Bronze (Kafka -> raw Delta) and Silver (Bronze
   Delta stream -> parsed, 10-min watermark, `dropDuplicates(["event_id","event_time"])`)
   streaming queries, each with its own checkpoint; quarantine path for unparseable rows.

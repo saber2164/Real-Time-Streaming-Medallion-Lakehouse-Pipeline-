@@ -6,10 +6,10 @@
 
 ## Current Status
 
-**Phases 0-5 COMPLETE (verified with real measurements). Phases 6-8 in progress**
-(docs, showcase web page, publish). The full pipeline has run end to end:
-producer -> Redpanda -> Bronze Delta -> Silver Delta (dedup) -> Gold (aggregate +
-OPTIMIZE/ZORDER), plus an ungraceful-crash recovery test.
+**Phases 0-7 COMPLETE (verified with real measurements). Phase 8 (publish) pending.**
+The full pipeline has run end to end: producer -> Redpanda -> Bronze Delta ->
+Silver Delta (dedup) -> Gold (aggregate + OPTIMIZE/ZORDER), plus an
+ungraceful-crash recovery test. All documentation and the showcase page are written.
 
 **Assessment (2026-10-18, session 2):**
 
@@ -24,16 +24,21 @@ OPTIMIZE/ZORDER), plus an ungraceful-crash recovery test.
 - ✅ Bugs fixed this session (see Bugs & Fixes): Console pin, topic-init idempotency,
   producer Dockerfile build, Silver-from-Bronze wiring, `delayed` double count,
   duration enforcement, env-default handling, quarantine path nesting.
-- ⬜ Phase 6 docs, Phase 7 web page, Phase 8 publish.
+- ✅ Phase 6 docs: `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` (19 Q&A), `docs/RUNBOOK.md`, `LICENSE` (MIT),
+  `CHANGELOG.md`.
+- ✅ Phase 7 web page: `docs/index.html` (self-contained, light/dark, inline SVG,
+  OpenGraph tags) built from measured results.
+- ⬜ Phase 8 publish.
 
 ## Next Actions
 
-1. Phase 6: finish `README.md`; write `docs/ARCHITECTURE.md`,
-   `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`, `docs/RUNBOOK.md`; add `LICENSE` (MIT);
-   update `CHANGELOG.md`. Run a doc-sync pass.
-2. Phase 7: build `docs/index.html` (self-contained) from measured results.
-3. Phase 8: push to `main`; enable GitHub Pages from `/docs`; repo description/topics.
-4. Report final links to the user.
+1. Phase 8: push to `main` (requires the user to authenticate to GitHub); enable
+   GitHub Pages (source `main`, folder `/docs`); set repo description/topics
+   (`data-engineering`, `spark`, `delta-lake`, `redpanda`, `kafka`, `streaming`,
+   `lakehouse`, `medallion-architecture`).
+2. Verify the live Pages page loads; report final repo + Pages links, measured
+   results, and known limitations to the user.
 
 ## Decisions Log
 
@@ -152,11 +157,14 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 
 ## Doc Sync Checklist
 
-- [ ] README.md (skeleton -> needs Deliverable 6 content)
-- [ ] docs/ARCHITECTURE.md
-- [ ] docs/CONCEPTS_AND_DESIGN_DECISIONS.md
-- [ ] docs/RUNBOOK.md
-- [ ] docs/index.html
-- [ ] CHANGELOG.md (Unreleased section outdated)
-- [ ] LICENSE (MIT) not added
+- [x] README.md (full: architecture, grain, measured results, how-to-run, limitations)
+- [x] docs/ARCHITECTURE.md
+- [x] docs/CONCEPTS_AND_DESIGN_DECISIONS.md
+- [x] docs/RUNBOOK.md
+- [x] docs/index.html
+- [x] CHANGELOG.md (Unreleased section current through Phase 7)
+- [x] LICENSE (MIT) added
 - [x] PROJECT_MEMORY.md (current)
+
+> Doc-sync pass (2026-10-18): every number in README/docs matches
+> `Measured Results` above and the raw evidence in `docs/assets/`.
