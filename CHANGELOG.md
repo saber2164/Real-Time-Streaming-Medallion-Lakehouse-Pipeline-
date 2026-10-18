@@ -8,6 +8,12 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 ## [Unreleased]
 
 ### Added
+- `.github/workflows/demo-run.yml`: free, on-demand cloud execution of the full
+  pipeline on GitHub Actions (`workflow_dispatch`), with evidence artifacts.
+- `docs/CLOUD_DEMO.md`: how the cloud trigger works, reproducibility, and the
+  optional one-click upgrade path.
+- `STREAM_MAX_SECONDS` option in `spark/config.py` + `spark/stream_ingestion.py`:
+  bounded run that drains the topic and stops itself (0 = run forever).
 - `docs/ARCHITECTURE.md`: layered architecture, data contracts, Bronze/Silver/Gold
   grain, streaming topology, recovery model.
 - `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 19 design

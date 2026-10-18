@@ -11,6 +11,7 @@ sales — with checkpointed fault tolerance and Delta `OPTIMIZE`/Z-ORDER compact
 [![Redpanda](https://img.shields.io/badge/Redpanda-v24.3.10-E4003B)](https://redpanda.com/)
 [![Python](https://img.shields.io/badge/Python-3.9-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Cloud demo run](https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml/badge.svg)](https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml)
 
 > **Docs:** [Architecture](docs/ARCHITECTURE.md) · [Concepts & Decisions](docs/CONCEPTS_AND_DESIGN_DECISIONS.md) · [Runbook](docs/RUNBOOK.md) · [Showcase page](docs/index.html) · [Project memory](PROJECT_MEMORY.md)
 
@@ -138,6 +139,24 @@ docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:
 
 Redpanda Console → http://localhost:8080 · Spark UI → http://localhost:4040.
 
+## Run it in the cloud (free, on demand)
+
+No local install needed: the whole pipeline (Redpanda → Spark → Bronze/Silver/Gold
+→ verification) can run on **GitHub Actions** runners, triggered from the
+[showcase page](docs/index.html) or the
+[Actions tab](https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml):
+
+1. **Actions → Cloud demo run → Run workflow** (optionally set duration/rate/seed).
+2. The runner builds the images, boots Redpanda, streams events, builds Gold,
+   runs the verification scripts, and uploads the evidence as artifacts.
+
+The stream is bounded by `STREAM_MAX_SECONDS` (default 180s) so the job drains
+the topic and exits cleanly instead of running forever. GitHub Pages is static
+and a browser must never hold a secret, so the button opens GitHub's
+authenticated *Run workflow* page — that login is the safety gate. Full details,
+plus the optional one-click upgrade, in
+[`docs/CLOUD_DEMO.md`](docs/CLOUD_DEMO.md).
+
 ## Verify streaming
 
 ```bash
@@ -198,6 +217,7 @@ Highlights:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components, schemas, wiring, ports, repo map
 - [`docs/CONCEPTS_AND_DESIGN_DECISIONS.md`](docs/CONCEPTS_AND_DESIGN_DECISIONS.md) — concepts explained, alternatives & "why not", bugs, limitations, interview Q&A
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — run / verify / inspect / recover / reset
+- [`docs/CLOUD_DEMO.md`](docs/CLOUD_DEMO.md) — run on GitHub Actions (free) + how the trigger works
 - [`docs/index.html`](docs/index.html) — showcase web page (GitHub Pages)
 - [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md) — live status, decisions, measured results, bugs
 

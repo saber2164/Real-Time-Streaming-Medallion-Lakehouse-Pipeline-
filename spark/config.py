@@ -44,6 +44,12 @@ DEDUP_KEYS = ["event_id", "event_time"]
 # Trigger for Bronze + Silver streaming queries.
 TRIGGER_PROCESSING_TIME = os.getenv("TRIGGER_PROCESSING_TIME", "5 seconds")
 
+# Optional runtime cap for the streaming job, in seconds. 0 (default) = run
+# until signalled, the normal always-on mode. Set to a positive value for a
+# bounded CI / cloud run: the job drains the topic and then stops itself
+# gracefully, so a runner exits cleanly instead of hanging.
+STREAM_MAX_SECONDS = int(os.getenv("STREAM_MAX_SECONDS", "0"))
+
 # ---------------------------------------------------------------------------
 # Gold layer
 # ---------------------------------------------------------------------------

@@ -1,0 +1,160 @@
+# Running the pipeline in the cloud (free, on demand)
+
+This document explains how the same pipeline that runs on your laptop can be
+executed **on GitHub's cloud runners, triggered from a button on the showcase
+page** — with no cloud account, no credit card, and no cost.
+
+---
+
+## What "run in the cloud" means here
+
+The pipeline is a set of Docker containers (Redpanda, a Spark streaming job, a
+synthetic producer) plus Delta tables on disk. GitHub Actions gives us a free,
+ephemeral Linux VM where we can:
+
+1. check out the repo,
+2. build the images,
+3. start Redpanda and create the topic,
+4. run the streaming job (bounded — it drains the topic and stops itself),
+5. produce events,
+6. build Gold and compact with `OPTIMIZE`/`Z-ORDER`,
+7. run the same verification scripts as locally, and
+8. upload the evidence as build artifacts.
+
+The workflow lives at **`.github/workflows/demo-run.yml`**.
+
+---
+
+## How the trigger works (and why it's shaped this way)
+
+```
+   [ Button on docs/index.html ]
+              │  opens
+              ▼
+   [ GitHub "Run workflow" page ]  ← GitHub login = authentication + safety gate
+              │  dispatches
+              ▼
+   [ GitHub Actions runner (ubuntu-latest) ]
+              │  docker compose up
+              ▼
+   [ Redpanda → Spark (Bronze→Silver→Gold) → verify ] → run summary + artifacts
+```
+
+Two constraints force this design:
+
+1. **GitHub Pages is static.** It serves files only; it cannot execute code or
+   start jobs.
+2. **A browser must never hold a secret.** Starting a job requires a token or
+   cloud key. If that key were embedded in the page, anyone could use it.
+
+So the button deep-links to GitHub's secure *Run workflow* page. Clicking
+**Run workflow** there (signed in) is the trigger, and GitHub's own auth is the
+safety gate. This is the standard, zero-cost way to do "run it on demand" from a
+static site.
+
+---
+
+## How to trigger a run
+
+**From GitHub:** repository → **Actions** → **Cloud demo run** → **Run workflow**.
+You can override:
+
+| Input | Meaning | Default |
+|-------|---------|---------|
+| `duration` | producer duration in seconds | `60` |
+| `rate` | events per second | `50` |
+| `seed` | RNG seed (reproducible data) | `42` |
+| `stream_seconds` | hard cap before the stream stops itself | `180` |
+
+**From the showcase page:** click **“Run it in the cloud (free)”**, then
+**Run workflow**.
+
+---
+
+## Why the stream stops by itself
+
+A streaming job normally runs forever. On a CI runner that would hang the job.
+So `spark/stream_ingestion.py` gained an optional, documented switch:
+
+```bash
+# stop gracefully after 180 seconds (drains the topic first)
+-e STREAM_MAX_SECONDS=180
+```
+
+`STREAM_MAX_SECONDS=0` (the default) keeps the original always-on behaviour for
+local use. This is the only code change needed to make the pipeline
+CI/cloud-friendly.
+
+---
+
+## Reproducibility
+
+Because the producer is seeded (default `42`) and each run starts from an empty
+topic and empty Delta paths on a fresh runner, a cloud run reproduces the same
+shape as the local run:
+
+- Bronze = one row per produced record,
+- Silver = distinct `(event_id, event_time)`,
+- Gold = hourly × seller × payment-type aggregates.
+
+Exact row counts can differ slightly if you change `duration`, `rate`, or
+`seed`. The verification scripts assert the **invariants** (no duplicate dedup
+keys, contiguous Kafka offsets, Gold matches an independent recomputation), so
+they are meaningful regardless of the exact count.
+
+---
+
+## Optional upgrade: a true one-click button
+
+If you want a single click on the page to start a run **without** the extra
+GitHub screen, add a tiny serverless function that holds a **scoped** token and
+calls the GitHub *workflow dispatch* API:
+
+```
+[ button ] → POST [ serverless function (holds PAT, actions:write) ]
+                              │  POST /actions/workflows/demo-run.yml/dispatches
+                              ▼
+                     GitHub Actions run
+```
+
+Options: Cloudflare Workers, Vercel/Netlify functions, AWS Lambda — all have
+free tiers. Rules of thumb:
+
+- Use a **fine-grained** token limited to this one repo with **Actions: write**
+  (and nothing else).
+- Store it as a secret in the function platform, never in the page.
+- Add rate limiting / a shared secret so the public URL can't be abused to burn
+  your Actions minutes.
+- Show the run status by fetching the badge or the workflow-runs API.
+
+This is deliberately **not** enabled by default: an open, unauthenticated
+"start a job" endpoint is an abuse and cost risk. The default (button → GitHub's
+authenticated Run-workflow page) is safe and free.
+
+---
+
+## Cost and limits (GitHub Actions free tier)
+
+- Public repositories get **unlimited** standard-runner minutes.
+- Jobs are capped (default 6 hours; this workflow sets `timeout-minutes: 45`).
+- Runners are **ephemeral**: no persistent lakehouse between runs (that's why the
+  workflow builds a fresh dataset each time and uploads evidence as artifacts).
+- Docker image build and Spark jar download are the slow parts; a cache for
+  `~/.ivy2` is included to speed up repeat runs.
+
+---
+
+## Porting further (beyond GitHub Actions)
+
+The same containers map cleanly onto managed cloud services when you want
+persistent, production-grade streaming:
+
+| Concern | Local / CI | Managed option |
+|---------|-----------|----------------|
+| Broker | Redpanda container | Redpanda Cloud, Confluent, MSK, Event Hubs |
+| Spark | `spark-submit` in Docker | Databricks Jobs, EMR Serverless, Dataproc |
+| Storage | local `/lakehouse` | S3 / ADLS / GCS (Delta works on object storage) |
+| Orchestration | Actions workflow | Airflow, Databricks Workflows, Step Functions |
+
+See `docs/ARCHITECTURE.md` for the pipeline internals and
+`docs/CONCEPTS_AND_DESIGN_DECISIONS.md` for why each design choice was made.

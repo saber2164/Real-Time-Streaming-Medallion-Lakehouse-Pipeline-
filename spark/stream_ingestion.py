@@ -35,6 +35,12 @@ How to run
         spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
         /opt/spark/app/stream_ingestion.py
 
+For a bounded (CI / cloud) run, set STREAM_MAX_SECONDS so the job stops itself
+after draining:
+
+    docker-compose run --rm -e STREAM_MAX_SECONDS=180 spark \
+        spark-submit --packages ... /opt/spark/app/stream_ingestion.py
+
 Key design choices
 ------------------
 - Bronze is append-only and never mutated (replayable source of truth).
@@ -54,6 +60,8 @@ Key design choices
 import os
 import sys
 import signal
+import time
+import threading
 import logging
 
 from pyspark.sql import SparkSession
@@ -88,6 +96,7 @@ from config import (  # noqa: E402
     WATERMARK,
     DEDUP_KEYS,
     TRIGGER_PROCESSING_TIME,
+    STREAM_MAX_SECONDS,
 )
 
 logging.basicConfig(
@@ -328,16 +337,43 @@ def log_progress(query):
         )
 
 
-def handle_signal(signum, frame):
-    """Gracefully stop all active streaming queries on SIGTERM/SIGINT."""
-    logger.info("Received signal %s, stopping streaming queries gracefully...", signum)
+def stop_all_queries():
+    """Stop every active streaming query (idempotent, never raises)."""
     for q in ACTIVE_QUERIES:
         try:
             q.stop()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Error stopping query %s: %s", q.name, exc)
+            logger.warning("Error stopping query %s: %s", getattr(q, "name", "?"), exc)
+
+
+def handle_signal(signum, frame):
+    """Gracefully stop all active streaming queries on SIGTERM/SIGINT."""
+    logger.info("Received signal %s, stopping streaming queries gracefully...", signum)
+    stop_all_queries()
     logger.info("All streaming queries stopped.")
     sys.exit(0)
+
+
+def start_runtime_cap(seconds: int):
+    """Stop all queries after `seconds` (if > 0) so bounded runs exit cleanly.
+
+    Used by the GitHub Actions cloud demo (and any scheduled/CI run) so the
+    streaming job drains the topic and then terminates by itself, instead of
+    streaming forever. Returns the timer thread, or None when disabled.
+    """
+    if seconds <= 0:
+        logger.info("No runtime cap set (STREAM_MAX_SECONDS=0); streaming until signalled.")
+        return None
+
+    def _runner():
+        logger.info("Runtime cap set: will stop gracefully after %s seconds.", seconds)
+        time.sleep(seconds)
+        logger.info("Runtime cap reached; stopping streaming queries gracefully.")
+        stop_all_queries()
+
+    timer = threading.Thread(target=_runner, daemon=True, name="runtime-cap")
+    timer.start()
+    return timer
 
 
 def main():
@@ -361,9 +397,6 @@ def main():
     ACTIVE_QUERIES.extend([silver_query, quarantine_query])
 
     # Log progress every 30 seconds while streaming.
-    import threading
-    import time
-
     def progress_logger():
         while True:
             for q in ACTIVE_QUERIES:
@@ -376,8 +409,16 @@ def main():
     t = threading.Thread(target=progress_logger, daemon=True)
     t.start()
 
+    # Optional bounded run (CI / cloud): stop all queries after N seconds.
+    start_runtime_cap(STREAM_MAX_SECONDS)
+
     logger.info("Streaming ingestion running. Awaiting termination...")
     spark.streams.awaitAnyTermination()
+
+    # Ensure every query is stopped before tearing the session down.
+    stop_all_queries()
+    spark.stop()
+    logger.info("Streaming ingestion stopped.")
 
 
 if __name__ == "__main__":

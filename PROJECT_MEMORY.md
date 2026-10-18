@@ -15,7 +15,10 @@ written, and the repo is pushed with a live GitHub Pages site.
 **Published:**
 - Repo: https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-
 - Pages: https://saber2164.github.io/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/
-  (live, HTTP 200, built from `main` `/docs`, commit bb880f4).
+  (live, HTTP 200, built from `main` `/docs`).
+- Cloud demo: `.github/workflows/demo-run.yml` — run the whole pipeline free on
+  GitHub Actions from the Actions tab / the showcase page button
+  (`docs/CLOUD_DEMO.md`).
 
 **Assessment (2026-10-18, session 2):**
 
@@ -57,6 +60,8 @@ late-arriving data must update past hours.
 | 2026-10-18 | Gold write mode = **overwrite** | MERGE per batch | Gold is a derived aggregate; overwrite is idempotent and simplest for a scheduled batch |
 | 2026-10-18 | Z-order Gold on `seller_id` only | `event_date`+`customer_id` (v1) | `customer_id` absent; Z-order cannot use a partition column (doc v2 §3.C) |
 | 2026-10-18 | Recovery test on an isolated topic/paths | reuse `order-events` | Avoids polluting the canonical measured dataset |
+| 2026-10-18 | Cloud demo runs on **GitHub Actions** (`workflow_dispatch`), button links to the run page | Static-page one-click via a token/backend | Pages is static and a browser must not hold a secret; Actions is free, and GitHub login is the safety gate. One-click upgrade documented in `docs/CLOUD_DEMO.md` |
+| 2026-10-18 | Add `STREAM_MAX_SECONDS` (bounded run) | kill the container in CI | Lets the streaming job drain and exit cleanly so a cloud runner does not hang; default 0 preserves always-on local mode |
 
 ## Environment Facts
 
@@ -163,7 +168,9 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 - [x] docs/ARCHITECTURE.md
 - [x] docs/CONCEPTS_AND_DESIGN_DECISIONS.md
 - [x] docs/RUNBOOK.md
-- [x] docs/index.html
+- [x] docs/CLOUD_DEMO.md
+- [x] docs/index.html (includes "Run it in the cloud" section + button)
+- [x] .github/workflows/demo-run.yml
 - [x] CHANGELOG.md (Unreleased section current through Phase 7)
 - [x] LICENSE (MIT) added
 - [x] PROJECT_MEMORY.md (current)

@@ -139,9 +139,9 @@
       tolerance and <strong>OPTIMIZE</strong>/Z-ORDER compaction. Every number below was measured.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">View on GitHub</a>
+      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Run it in the cloud (free)</a>
       <a class="btn" href="#results">See measured results</a>
       <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
-      <a class="btn" href="../README.md">README</a>
     </div>
   </div>
 </header>
@@ -346,14 +346,39 @@ bash tests/verify_recovery.sh</code></pre>
       <a href="../docs/RUNBOOK.md">docs/RUNBOOK.md</a>.</p>
   </section>
 
+  <section id="cloud">
+    <h2><span class="num">08</span>Run it in the cloud (free)</h2>
+    <p class="lead">The whole pipeline can run on GitHub's cloud runners on demand — no local
+      install, no cloud account, no cost.</p>
+    <p><a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml"><img
+      src="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml/badge.svg"
+      alt="Cloud demo run status" /></a></p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Trigger a cloud run</a>
+      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions">All runs</a>
+    </div>
+    <p style="margin-top:16px">A GitHub Actions workflow
+      (<code>.github/workflows/demo-run.yml</code>) spins up Redpanda, streams events through
+      Bronze → Silver → Gold on an ephemeral runner, runs the same verification scripts, and
+      uploads the evidence as artifacts. You can set the producer duration/rate/seed when you
+      start it.</p>
+    <p class="note">How the trigger works: GitHub Pages is <em>static</em> (it serves files, it
+      cannot run code), and a browser must never hold a cloud key. So the button opens GitHub's
+      secure "Run workflow" page, which requires your GitHub login — that is the authentication
+      and the safety gate. See <a href="../docs/CLOUD_DEMO.md">docs/CLOUD_DEMO.md</a> for the
+      architecture and for the optional one-click upgrade (a tiny serverless function holding a
+      scoped token).</p>
+  </section>
+
   <section id="links">
-    <h2><span class="num">08</span>Links</h2>
+    <h2><span class="num">09</span>Links</h2>
     <div class="cta">
       <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">GitHub repository</a>
       <a class="btn" href="../README.md">README</a>
       <a class="btn" href="../docs/ARCHITECTURE.md">Architecture</a>
       <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
       <a class="btn" href="../docs/RUNBOOK.md">Runbook</a>
+      <a class="btn" href="../docs/CLOUD_DEMO.md">Cloud demo</a>
       <a class="btn" href="../PROJECT_MEMORY.md">Project memory</a>
     </div>
   </section>

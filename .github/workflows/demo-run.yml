@@ -1,0 +1,161 @@
+name: Cloud demo run
+
+# Free, on-demand execution of the whole pipeline on GitHub's cloud runners.
+# Trigger it from the "Actions" tab (Run workflow) or the button on the
+# showcase page (docs/index.html), which deep-links to this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Producer duration (seconds)"
+        required: false
+        default: "60"
+      rate:
+        description: "Events per second"
+        required: false
+        default: "50"
+      seed:
+        description: "Random seed"
+        required: false
+        default: "42"
+      stream_seconds:
+        description: "Max seconds the streaming job runs before it stops itself"
+        required: false
+        default: "180"
+
+# One demo at a time; queue rather than cancel so runs are reproducible.
+concurrency:
+  group: cloud-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    name: Redpanda -> Spark -> Delta (Bronze/Silver/Gold)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DURATION: ${{ github.event.inputs.duration }}
+      RATE: ${{ github.event.inputs.rate }}
+      SEED: ${{ github.event.inputs.seed }}
+      STREAM_SECONDS: ${{ github.event.inputs.stream_seconds }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner and Docker info
+        run: |
+          docker version
+          docker compose version
+
+      - name: Cache Spark package jars (.ivy2)
+        uses: actions/cache@v4
+        with:
+          path: .ivy2
+          key: ivy2-${{ runner.os }}-spark3.5.3-delta3.2.0
+
+      - name: Build Spark and producer images
+        run: docker compose --profile producer build spark producer
+
+      - name: Start Redpanda (wait until healthy)
+        run: docker compose up -d --wait redpanda
+
+      - name: Create topic order-events (idempotent)
+        run: docker compose run --rm -T --no-deps topic-init
+
+      - name: Start streaming ingestion (detached, bounded)
+        run: |
+          docker compose run -d -T --no-deps --name p2-ingest \
+            -e STREAM_MAX_SECONDS="${STREAM_SECONDS}" \
+            spark spark-submit \
+            --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/app/stream_ingestion.py
+
+      - name: Produce synthetic order events
+        run: |
+          docker compose --profile producer run --rm -T --no-deps producer \
+            python event_producer.py \
+            --duration "${DURATION}" --rate "${RATE}" --seed "${SEED}"
+
+      - name: Wait for ingestion to drain and stop
+        run: |
+          for _ in $(seq 1 120); do
+            state=$(docker inspect -f '{{.State.Running}}' p2-ingest 2>/dev/null || echo gone)
+            [ "$state" = "false" ] && break
+            [ "$state" = "gone" ] && break
+            sleep 5
+          done
+          echo "--- ingestion log (tail) ---"
+          docker logs p2-ingest 2>&1 | tail -50 || true
+          code=$(docker inspect -f '{{.State.ExitCode}}' p2-ingest 2>/dev/null || echo 1)
+          echo "ingestion exit code: $code"
+          [ "$code" = "0" ] || { echo "Ingestion did not exit cleanly"; exit 1; }
+
+      - name: Build Gold + compact (OPTIMIZE / ZORDER)
+        run: |
+          set -o pipefail
+          docker compose run --rm -T --no-deps spark spark-submit \
+            --packages io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/app/gold_compaction.py 2>&1 | tee gold_run.txt
+
+      - name: Verify Silver (dedup)
+        run: |
+          set -o pipefail
+          docker compose run --rm -T --no-deps spark spark-submit \
+            --packages io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/tests/verify_silver_dedup.py 2>&1 | tee verify_silver_dedup.txt
+
+      - name: Verify Bronze (contiguous offsets)
+        run: |
+          set -o pipefail
+          docker compose run --rm -T --no-deps spark spark-submit \
+            --packages io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/tests/verify_bronze_offsets.py 2>&1 | tee verify_bronze_offsets.txt
+
+      - name: Verify Gold (independent recompute)
+        run: |
+          set -o pipefail
+          docker compose run --rm -T --no-deps spark spark-submit \
+            --packages io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/tests/verify_gold.py 2>&1 | tee verify_gold.txt
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "## Cloud demo run results"
+            echo ""
+            echo "Inputs: duration=\`${DURATION}s\` rate=\`${RATE}/s\` seed=\`${SEED}\` stream_cap=\`${STREAM_SECONDS}s\`"
+            echo ""
+            for f in verify_silver_dedup.txt verify_bronze_offsets.txt verify_gold.txt; do
+              if [ -f "$f" ]; then
+                echo "### $f"
+                echo '```'
+                grep -E 'Silver rows|Distinct|bad total_amount|PASS|FAIL|FAIL|partition|Bronze|gold|Gold|revenue|order_count|mismatch|independent' "$f" | tail -20 || tail -20 "$f"
+                echo '```'
+              fi
+            done
+            if [ -f gold_run.txt ]; then
+              echo "### gold_run.txt (OPTIMIZE highlights)"
+              echo '```'
+              grep -E 'Gold aggregate rows|OPTIMIZE RESULT|Wrote Gold' gold_run.txt | tail -20 || echo "(no matching lines)"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence
+          path: |
+            gold_run.txt
+            verify_*.txt
+          if-no-files-found: warn
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose --profile producer down -v --remove-orphans || true
