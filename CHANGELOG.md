@@ -55,6 +55,9 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
   Found by the cloud runs. Added `scripts/watermark_report.py` to quantify it and a
   new invariant in `tests/verify_silver_dedup.py` (Silver must retain every distinct
   Bronze key) so the loss can never silently return.
+  **Verified in the cloud** (run `#39156492225`, all steps green): Bronze 3277 →
+  Silver **3018** (distinct keys 3018, `numRowsDroppedByWatermark = 0`), Gold 60,
+  revenue 269805.58 — identical to the local canonical result.
 - **Idle supervisor could stop mid-stream.** `_total_input_rows()` summed each query's
   *last micro-batch* row count, which is constant under steady input (e.g. ~250 rows
   every 5 s), so it could declare the pipeline idle while data was still arriving.

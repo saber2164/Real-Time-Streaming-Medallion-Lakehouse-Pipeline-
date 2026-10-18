@@ -177,6 +177,20 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
   Bronze 3277 / 3018 distinct → Silver **3018**, quarantine 0,
   `numRowsDroppedByWatermark=0`, idle stop after a true drain. `scripts/watermark_report.py`
   RESULT: "late unique events are RETAINED (no data loss)".
+- Cloud run **#39156492225** SUCCEEDED (all steps) **with the fix**, same inputs
+  (60 s @ 50/s seed 42, idle_stop 45 s):
+  - Producer: `emitted=3277 duplicates=259 delayed=276 late_queued=276 delivery_errors=0`.
+  - Bronze **3277** (p0 1056, p1 1170, p2 1051; contiguous) → Silver **3018**;
+    distinct `event_id` 3018; distinct `(event_id, event_time)` 3018;
+    **Bronze distinct dedup keys 3018** (completeness holds); bad `total_amount` 0;
+    `numRowsDroppedByWatermark=0` on the `dedupe` state operator.
+  - Idle stop fired after a true drain ("processing 9831 rows").
+  - Gold **60** rows; duplicate grain keys 0; order_count 1055 = 1055;
+    total_revenue 269805.58 = 269805.58; mismatched 0.
+  - OPTIMIZE: Bronze 33→1 (303,958 → 208,260 bytes), Silver 40→1 (362,778 → 127,234 bytes),
+    Gold 1→1 (4,175 bytes).
+  - **Cloud == local canonical** (Silver 3018, Gold 60, revenue 269805.58): the fix
+    restored correctness and cross-environment reproducibility.
 
 ### Stack / UI
 - Redpanda topic `order-events`: 3 partitions, 1 replica.

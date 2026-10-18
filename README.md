@@ -154,12 +154,18 @@ No local install needed: the whole pipeline (Redpanda → Spark → Bronze/Silve
 2. The runner builds the images, boots Redpanda, streams events, builds Gold,
    runs the verification scripts, and uploads the evidence as artifacts.
 
-The stream is bounded by `STREAM_MAX_SECONDS` (default 180s) so the job drains
-the topic and exits cleanly instead of running forever. GitHub Pages is static
+The stream is bounded by `STREAM_IDLE_TIMEOUT_SECONDS` (stop once the pipeline
+drains; `STREAM_MAX_SECONDS` is only a wall-clock backstop) so the job drains the
+topic and exits cleanly instead of running forever. GitHub Pages is static
 and a browser must never hold a secret, so the button opens GitHub's
 authenticated *Run workflow* page — that login is the safety gate. Full details,
 plus the optional one-click upgrade, in
 [`docs/CLOUD_DEMO.md`](docs/CLOUD_DEMO.md).
+
+A cloud run reproduces the local canonical result exactly. Verified run
+[`#39156492225`](https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/runs/39156492225):
+Bronze 3277 → Silver **3018** (distinct keys 3018, `numRowsDroppedByWatermark = 0`)
+→ Gold 60 with revenue 269805.58; all verification steps green.
 
 ## Verify streaming
 
