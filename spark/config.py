@@ -32,10 +32,17 @@ QUARANTINE_PATH = os.getenv("QUARANTINE_PATH", "/lakehouse/silver/_quarantine")
 # ---------------------------------------------------------------------------
 # Streaming / watermark settings
 # ---------------------------------------------------------------------------
-# 10-minute event-time watermark. Producer delays events by 2-15 minutes, so
-# late events beyond ~10 minutes fall outside watermark tolerance (see design
-# doc v2 §4.1 and CONCEPTS_AND_DESIGN_DECISIONS.md).
-WATERMARK = os.getenv("WATERMARK", "10 minutes")
+# 20-minute event-time watermark: sized ABOVE the producer's maximum lateness
+# (2-15 min) so no valid event is ever beyond the watermark.
+#
+# Why 20 and not 10 (measured, not theoretical): with a 10-minute watermark in
+# an append dedup, Spark DROPS any record whose event_time is below the
+# watermark. A live run (stream first, producer second) of the canonical
+# dataset therefore lost 137 legitimate, unique orders: Bronze 3277 rows /
+# 3018 distinct keys -> Silver 2881 (Bronze "producer-first" runs hid this,
+# because the whole backlog landed before the watermark advanced). See
+# scripts/watermark_report.py and CONCEPTS_AND_DESIGN_DECISIONS.md §1.4.
+WATERMARK = os.getenv("WATERMARK", "20 minutes")
 
 # Dedup key per doc v2 §3.B.2: event_id is the true identity; event_time must
 # be in the key so Spark can expire state. Do NOT dedup on order_id alone.

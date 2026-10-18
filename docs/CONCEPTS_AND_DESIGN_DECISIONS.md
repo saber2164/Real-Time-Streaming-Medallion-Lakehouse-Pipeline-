@@ -73,25 +73,33 @@ state**, which is what keeps stateful operations from growing forever. Data that
 after the watermark for its event time is **late data**.
 
 **Why it matters here.** Dedup is stateful, so without a watermark the state store would
-grow without bound. We set the watermark to **10 minutes**.
+grow without bound. We set the watermark to **20 minutes**.
 
-**How it's used.** `withWatermark("event_time", "10 minutes")` on the Silver query.
+**How it's used.** `withWatermark("event_time", "20 minutes")` on the Silver query.
 
-**The deliberate tension (important).** The producer delays events by **2-15 minutes**, but
-the watermark only tolerates ~10 minutes. So:
+**Why 20 minutes, not 10 (measured).** In an `append` dedup, Spark does **not** merely evict
+state for records below the watermark — it **drops** them. That distinction cost us real
+data: the producer delays events by **2-15 minutes**, so with the original **10-minute**
+watermark a *live* run (stream started before the producer) silently lost **137 valid,
+unique orders** — Bronze 3277 rows / 3018 distinct keys, but Silver only **2879-2882**, with
+`numRowsDroppedByWatermark > 0` on the `dedupe` state operator. Locally the same code lost
+nothing, because the producer was run to completion *before* the stream, so the whole backlog
+arrived in early batches while the watermark was still 0 — a dangerous way to be "correct".
 
-- A **late but unique** event beyond the watermark is still written by an `append` query —
-  but its dedup state may already have been evicted.
-- A **late *duplicate*** beyond the watermark can therefore slip through undeduplicated.
+Sizing the watermark **above the maximum lateness (15 min → 20 min)** removes the loss
+entirely: a live run now keeps all 3018 distinct keys with `numRowsDroppedByWatermark = 0`.
+Reproduce with `scripts/watermark_report.py`.
 
-This is a *known, documented* watermark-vs-state tuning trade-off, not a bug: lowering the
-watermark shrinks state but lets more late duplicates through; raising it catches more late
-duplicates at the cost of more state. Our recovery test (Silver 4315 rows == 4315 distinct
-`event_id`) shows that within this workload the duplicates were close enough in time to be
-caught.
+**The residual trade-off.** The watermark still bounds state, and it remains a *tuning knob*.
+Lowering it shrinks state but begins dropping valid late events and lets late *duplicates*
+slip through; raising it retains more late data at the cost of a larger state store. We chose
+20 min because it is the smallest round value safely above the producer's 15-min maximum
+lateness. **Late-data completeness and bounded state are in direct tension; set the
+watermark from the workload's measured lateness.**
 
-**Example.** Event with `event_time = 12:00` arrives at 12:09 → within watermark, deduped
-normally. A duplicate of a 11:40 event arriving at 12:05 → beyond tolerance, may pass.
+**Example.** Event with `event_time = 12:00` arriving at 12:09 → within watermark, deduped
+normally. The same event arriving at 12:40 → beyond a 20-minute watermark → dropped (which is
+exactly why the watermark must cover the latency you actually see).
 
 ### 1.5 Stateful deduplication and why `event_time` must be in the key
 
@@ -274,6 +282,9 @@ alternative wins**.
   was chosen against to keep the classic, widely-understood `dropDuplicates` in play.
 - **Why not per-batch `MERGE`:** correct and flexible, but heavier (a MERGE per micro-batch)
   and more code; `dropDuplicates` is native and cheaper here.
+- **Watch the watermark vs. lateness:** with `append` dedup, records below the watermark are
+  *dropped*, not just evicted. A watermark shorter than the producer's 2-15 min lateness lost
+  137 valid rows on a live run; we size it at 20 min instead (see §1.4).
 - **Why not Gold-only dedup:** would leave duplicates in Silver (the cleanse layer) and still
   require stateful dedup somewhere.
 - **When the alternative wins:** `MERGE` when dedup keys are updated (upserts), when you must
@@ -416,14 +427,17 @@ expire** dedup state; otherwise the state store grows unbounded. Deduping on `or
 wrongly collapse `order_created`/`order_paid`/`order_cancelled`.
 
 **Q4. What does your watermark actually guarantee?**
-With a 10-minute watermark, everything with `event_time ≥ max_seen − 10min` is presumed seen,
-so state for older events can be dropped. Because the producer delays up to 15 minutes, late
-*duplicates* beyond the watermark can slip through — a documented trade-off.
+With a 20-minute watermark, everything with `event_time ≥ max_seen − 20min` is presumed seen.
+In an `append` dedup Spark **drops** records below the watermark, so the real guarantee is:
+an event arriving more than 20 minutes after its `event_time` is **lost**. We measured this —
+a 10-minute watermark lost 137 valid orders on a live run — and set 20 min to exceed the
+producer's 15-min maximum lateness (`numRowsDroppedByWatermark = 0`).
 
 **Q5. How many duplicates did dedup remove, and how do you know?**
 Bronze 3277 → Silver 3018 = **259** removed, exactly the producer's `duplicates=259`.
-`verify_silver_dedup.py` also asserts `COUNT(*) = COUNT(DISTINCT event_id) = COUNT(DISTINCT
-(event_id, event_time))` = 3018 and zero bad `total_amount`.
+`verify_silver_dedup.py` asserts `COUNT(*) = COUNT(DISTINCT event_id) = COUNT(DISTINCT
+(event_id, event_time))` = 3018, that **Silver retains every distinct Bronze key** (the check
+that catches silent late-data loss), and zero bad `total_amount`.
 
 **Q6. What delivery guarantee does the pipeline give?**
 The producer/broker are **at-least-once**; the Delta sink + checkpoint give **idempotent,
@@ -474,7 +488,9 @@ demonstrate watermarks, state, and micro-batches.
 
 **Q16. How would you catch a late duplicate that slipped past the watermark?**
 Raise the watermark (more state, catches more late dups), or dedup against the *table* with a
-`MERGE`/`dropDuplicatesWithinWatermark` rather than only within the stream.
+`MERGE`/`dropDuplicatesWithinWatermark` rather than only within the stream. Note the flip side
+we hit: making the watermark *smaller* than the actual lateness silently **drops** valid
+events, so always size it from measured lateness.
 
 **Q17. What's your state store doing, concretely?**
 It holds one entry per `(event_id, event_time)` seen within the watermark window so repeats can

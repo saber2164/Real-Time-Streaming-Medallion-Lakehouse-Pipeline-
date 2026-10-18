@@ -24,7 +24,7 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - `docs/index.html`: self-contained showcase page (light/dark, inline SVG, OpenGraph).
 - `LICENSE` (MIT).
 - `spark/stream_ingestion.py`: Bronze (Kafka -> raw Delta) and Silver (Bronze
-  Delta stream -> parsed, 10-min watermark, `dropDuplicates(["event_id","event_time"])`)
+  Delta stream -> parsed, 20-min watermark, `dropDuplicates(["event_id","event_time"])`)
   streaming queries, each with its own checkpoint; quarantine path for unparseable rows.
 - `spark/gold_compaction.py`: hourly/seller/payment-type aggregation + `OPTIMIZE ... ZORDER BY (seller_id)`
   with active-file before/after metrics.
@@ -44,6 +44,21 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - Producer Dockerfile copies `requirements.txt` before `pip install` (context is `./producer`).
 
 ### Fixed
+- **Lost valid late events (data loss).** A 10-minute watermark was **shorter** than
+  the producer's 15-minute maximum lateness, and in an `append` dedup Spark *drops*
+  records below the watermark. A **live** run (stream first) therefore silently
+  dropped ~137 valid, unique orders (Bronze 3277 rows / 3018 distinct keys → Silver
+  only 2879-2882). Locally the bug was masked because the producer ran to completion
+  before the stream, so the backlog landed in early batches while the watermark was
+  still 0. Fixed by sizing the watermark **above** the lateness (`10 minutes` →
+  `20 minutes`); a live run now keeps all 3018 keys with `numRowsDroppedByWatermark = 0`.
+  Found by the cloud runs. Added `scripts/watermark_report.py` to quantify it and a
+  new invariant in `tests/verify_silver_dedup.py` (Silver must retain every distinct
+  Bronze key) so the loss can never silently return.
+- **Idle supervisor could stop mid-stream.** `_total_input_rows()` summed each query's
+  *last micro-batch* row count, which is constant under steady input (e.g. ~250 rows
+  every 5 s), so it could declare the pipeline idle while data was still arriving.
+  It now accumulates rows **monotonically** (deduped by `(query, batchId)`).
 - `Dockerfile.spark`: `JAVA_HOME` now uses an architecture-neutral symlink
   (`/usr/lib/jvm/java-21`) instead of a hardcoded `java-21-openjdk-arm64` path,
   so the image runs on both arm64 (Apple Silicon) and amd64 (CI). Also installs

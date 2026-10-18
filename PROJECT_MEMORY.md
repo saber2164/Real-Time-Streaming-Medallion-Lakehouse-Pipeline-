@@ -62,7 +62,9 @@ late-arriving data must update past hours.
 | 2026-10-18 | Recovery test on an isolated topic/paths | reuse `order-events` | Avoids polluting the canonical measured dataset |
 | 2026-10-18 | Cloud demo runs on **GitHub Actions** (`workflow_dispatch`), button links to the run page | Static-page one-click via a token/backend | Pages is static and a browser must not hold a secret; Actions is free, and GitHub login is the safety gate. One-click upgrade documented in `docs/CLOUD_DEMO.md` |
 | 2026-10-18 | Add `STREAM_MAX_SECONDS` (bounded run) | kill the container in CI | Lets the streaming job drain and exit cleanly so a cloud runner does not hang; default 0 preserves always-on local mode |
-| 2026-10-18 | Drain-aware stop via `STREAM_IDLE_TIMEOUT_SECONDS`; `STREAM_MAX_SECONDS` demoted to backstop | a fixed wall-clock cap | The first cloud run proved a time cap can exit mid-cascade (Silver 2879, not the full 3018) even with identical producer output. Idle detection drains Kafka → Bronze → Silver fully first |
+| 2026-10-18 | Drain-aware stop via `STREAM_IDLE_TIMEOUT_SECONDS`; `STREAM_MAX_SECONDS` demoted to backstop | a fixed wall-clock cap | Lets a bounded run drain Kafka → Bronze → Silver before exit instead of relying on a wall-clock cap. Does **not** by itself explain the Silver shortfall (that was the watermark — see next row) |
+| 2026-10-18 | **Watermark `10 minutes` → `20 minutes`** | shrink the producer's 2-15 min lateness, or accept loss | In `append` dedup Spark **drops** records below the watermark. A live run lost 137 valid unique orders (Bronze 3277/3018 distinct → Silver 2879-2882). Sizing the watermark **above** the max lateness keeps every key (`numRowsDroppedByWatermark=0`) while preserving the realistic late-data stress |
+| 2026-10-18 | Make the idle supervisor count input rows **monotonically** | keep summing each query's last micro-batch | `lastProgress["numInputRows"]` is per-batch (constant under steady input), so the supervisor could declare "idle" mid-stream and stop early (observed: Bronze 2574 of 3277). Cumulative counting stops only on a true drain |
 
 ## Environment Facts
 
@@ -110,6 +112,8 @@ late-arriving data must update past hours.
 | Env-var defaults ignored when flag omitted | `default=None` overrode env | Defaults read `os.getenv(...)` so env sets defaults and CLI still wins |
 | Quarantine nested inside Silver table path | Default path was `/lakehouse/silver/order_events/_quarantine` | Moved to sibling `/lakehouse/silver/_quarantine` |
 | Cloud run: `spark-submit` fails with `/usr/lib/jvm/java-21-openjdk-arm64/bin/java: No such file or directory` | `Dockerfile.spark` hardcoded the arm64 Java path, which does not exist on amd64 CI runners; `ps` also missing | Point `JAVA_HOME` at an arch-neutral symlink `/usr/lib/jvm/java-21`; install `procps` |
+| **Valid late events silently lost** (Silver 2879-2882, not 3018) | `append` dedup + a 10-min watermark **shorter** than the producer's 15-min max lateness → Spark *drops* sub-watermark records. Masked locally because the producer ran to completion *before* the stream (backlog landed while the watermark was still 0) | Watermark `10 minutes` → `20 minutes` (above max lateness). Verified live: Bronze 3277 / 3018 distinct → Silver **3018**, `numRowsDroppedByWatermark=0`. Added `scripts/watermark_report.py` + a Bronze-completeness invariant in `tests/verify_silver_dedup.py` |
+| Idle supervisor stopped the stream **mid-run** (Bronze 2574 of 3277) | `_total_input_rows()` summed each query's *last micro-batch* row count — constant under steady input, so "no change" was mistaken for idle | Accumulate rows monotonically, deduped by `(query, batchId)`; the value only grows while input arrives |
 
 ## Measured Results
 
@@ -125,7 +129,8 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 - Bronze rows = **3277** (one row per produced Kafka record).
 - Silver rows = **3018** = 3277 - 259 duplicates.
 - `verify_silver_dedup.py` PASS: rows 3018 == distinct event_id 3018 == distinct
-  (event_id, event_time) 3018; rows with bad `total_amount` = 0.
+  (event_id, event_time) 3018; rows with bad `total_amount` = 0. (Now also asserts
+  Silver retains **every distinct Bronze key**.)
 - `verify_bronze_offsets.py` PASS (contiguous, no gaps/repeats):
   p0 [0..1055] = 1056, p1 [0..1169] = 1170, p2 [0..1050] = 1051.
 
@@ -155,6 +160,24 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
   p0 [0..1681] = 1682, p1 [0..1808] = 1809, p2 [0..1423] = 1424.
 - Bronze total 4915 records; Silver 4315 (= 4915 - 600 duplicates removed by dedup).
 
+### Phase 6 - Cloud (GitHub Actions) and the live late-data bug
+- Cloud run **#39152253107** SUCCEEDED (all 17 steps) under the old 10-min watermark:
+  Bronze 3277, **Silver 2879**, Gold 120 rows (order_count 1004 = 1004, revenue
+  255878.9 = 255878.9, mismatched 0); OPTIMIZE Bronze 33→1, Silver 44→1, Gold 1→1.
+- Cloud run **#39153174000** SUCCEEDED (idle stop fired after a true drain), also
+  10-min watermark: **Silver 2882**, Gold 60 rows (order_count 1007 = 1007, revenue
+  256933.1 = 256933.1, mismatched 0); OPTIMIZE Bronze 33→1, Silver 40→1, Gold 1→1.
+  - Both cloud runs are **buggy** (rows dropped); they are why the watermark was
+    raised. Gold row count differs (120 vs 60) only because the run crossed
+    hour buckets (20 sellers × 3 payment types = 60/hour).
+- Controlled **live-arrival probe** (stream first, producer second) on isolated
+  topic `order-events-live`: at 10 min, Bronze 3277 / 3018 distinct → Silver **2881**,
+  **137 late unique events dropped**, `numRowsDroppedByWatermark > 0`.
+- After the fix (`WATERMARK=20 minutes`, monotonic supervisor), same live probe:
+  Bronze 3277 / 3018 distinct → Silver **3018**, quarantine 0,
+  `numRowsDroppedByWatermark=0`, idle stop after a true drain. `scripts/watermark_report.py`
+  RESULT: "late unique events are RETAINED (no data loss)".
+
 ### Stack / UI
 - Redpanda topic `order-events`: 3 partitions, 1 replica.
 - Console reachable at http://localhost:8080 (HTTP 200), connected to Kafka.
@@ -179,3 +202,10 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 
 > Doc-sync pass (2026-10-18): every number in README/docs matches
 > `Measured Results` above and the raw evidence in `docs/assets/`.
+>
+> Correction pass (2026-10-18, after the cloud runs): the earlier interim claim that
+> the Silver shortfall was a *drain/timing* problem was **wrong**. Root cause was the
+> **10-minute watermark dropping valid late events** (proven with a controlled live
+> probe: 137 unique events lost). Watermark raised to 20 min and the idle supervisor
+> made monotonic; README, ARCHITECTURE, CONCEPTS, RUNBOOK, CLOUD_DEMO, CHANGELOG and
+> index.html were all updated to the measured explanation.

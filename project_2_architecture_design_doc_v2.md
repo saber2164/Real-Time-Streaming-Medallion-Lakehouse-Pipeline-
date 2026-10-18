@@ -3,6 +3,18 @@
 **Target repository:** https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-
 **Doc version:** 2.0 | **Status:** Ready for execution
 
+> **Implementation note (post-execution, measured).** This spec describes a
+> **10-minute** watermark. During execution a **live** run (stream first,
+> producer second) proved that a 10-min watermark is **shorter** than the
+> producer's 15-min maximum lateness, and in an `append` dedup Spark *drops*
+> records below the watermark — silently losing ~137 valid, unique orders
+> (Bronze 3277 rows / 3018 distinct keys → Silver only 2879-2882). The shipped
+> implementation therefore uses `WATERMARK = "20 minutes"` (above max
+> lateness; live run keeps all 3018 keys, `numRowsDroppedByWatermark = 0`).
+> Everywhere this document says "10 minutes", read "20 minutes" for the
+> delivered code. See `spark/config.py`, `scripts/watermark_report.py`, and
+> `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` §1.4.
+
 > **What changed from v1 (summary):** see [Appendix A: Change Log from v1](#appendix-a-change-log-from-v1). Short version: fixed a port conflict, a dedup-key inconsistency, a broker networking gap, a Gold-layer Z-ORDER mistake, and a filename mismatch; added persistent agent memory, a documentation-sync rule, a concepts/decision-record doc, a showcase web page, and a Git/GitHub workflow.
 
 ---

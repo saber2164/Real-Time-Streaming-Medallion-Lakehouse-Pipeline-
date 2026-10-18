@@ -1,5 +1,11 @@
 # Project 2 Architecture & Design Doc: Real-Time Streaming & Medallion Lakehouse Pipeline (Redpanda + PySpark + Delta Lake)
 
+> **Superseded by `project_2_architecture_design_doc_v2.md`.** Note the delivered
+> implementation deviates from this v1's **10-minute** watermark: a live run proved
+> 10 min drops valid late events (the producer delays up to 15 min), so the shipped
+> `WATERMARK` is **20 minutes**. See the implementation note in the v2 doc and
+> `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` §1.4.
+
 ## 1. Project Overview & Business Value
 
 ### **Project Title**

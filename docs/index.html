@@ -189,7 +189,7 @@
           <!-- Silver -->
           <rect x="596" y="95" width="168" height="60" rx="12" fill="color-mix(in srgb, var(--accent-3) 16%, var(--surface))" stroke="var(--accent-3)"/>
           <text x="680" y="116" text-anchor="middle" fill="var(--text)" font-weight="700">SILVER</text>
-          <text x="680" y="133" text-anchor="middle" fill="var(--muted)" font-size="11">watermark 10m · dedup</text>
+          <text x="680" y="133" text-anchor="middle" fill="var(--muted)" font-size="11">watermark 20m · dedup</text>
           <text x="680" y="147" text-anchor="middle" fill="var(--muted)" font-size="11">(event_id, event_time)</text>
 
           <!-- Gold -->
@@ -234,15 +234,15 @@
     <div class="cards">
       <div class="card">
         <h3>Stateful dedup</h3>
-        <p><code>dropDuplicates(["event_id","event_time"])</code> after a 10-minute watermark.
+        <p><code>dropDuplicates(["event_id","event_time"])</code> after a 20-minute watermark.
           <code>event_id</code> is identity; <code>event_time</code> lets the watermark <em>expire</em>
           state, so it never grows unbounded.</p>
       </div>
       <div class="card">
         <h3>Late data</h3>
-        <p>The producer delays events 2-15 min while the watermark tolerates 10 — so late
-          <em>duplicates</em> beyond tolerance can slip through. A deliberate, documented
-          completeness-vs-state trade-off.</p>
+        <p>The producer delays events 2-15 min; the watermark is sized <strong>above</strong> that
+          (20 min) so no valid late event is dropped. A shorter watermark silently drops them —
+          we measured 137 lost rows at 10 min, then fixed it.</p>
       </div>
       <div class="card">
         <h3>Checkpointing</h3>

@@ -29,7 +29,7 @@ the implementation-level architecture reference and must stay in sync with the c
 │   /lakehouse/bronze/order_events                                            │
 │               │ readStream (delta)   ← Silver replays Bronze, not Kafka      │
 │               ▼                                                             │
-│   SILVER query        from_json → watermark 10m → dropDuplicates             │
+│   SILVER query        from_json → watermark 20m → dropDuplicates             │
 │   /lakehouse/silver/order_events          (["event_id","event_time"])        │
 │                       unparseable → /lakehouse/silver/_quarantine           │
 └──────────────┬──────────────────────────────────────────────────────────────┘
@@ -98,8 +98,10 @@ Parsed event columns (`event_id` … `event_time`) **plus**:
 | `event_date` | date | `to_date(event_time)` |
 | `total_amount` | double | `price + freight_value` |
 
-Deduplicated with `withWatermark("event_time", "10 minutes")` +
-`dropDuplicates(["event_id", "event_time"])`.
+Deduplicated with `withWatermark("event_time", "20 minutes")` +
+`dropDuplicates(["event_id", "event_time"])`. The watermark is deliberately
+**wider than the producer's 2-15 min delay window** so no valid late event is
+dropped (see §4 and `scripts/watermark_report.py`).
 
 ### 3.4 Quarantine — `/lakehouse/silver/_quarantine`
 
@@ -130,10 +132,18 @@ double-count an order.
 |---------|---------|-----------|
 | Trigger | `processingTime = 5 seconds` | small micro-batches, low local latency |
 | Output mode | `append` | Bronze and Silver are append-only facts |
-| Watermark | `10 minutes` on `event_time` | bounds dedup state; deliberately **shorter** than the producer's 2-15 min delay window so late-data behaviour is observable |
+| Watermark | `20 minutes` on `event_time` | bounds dedup state; deliberately **wider** than the producer's 2-15 min delay window so valid late events are never dropped |
 | Dedup key | `["event_id", "event_time"]` | `event_id` alone cannot bound state; `order_id` would collapse legitimately different events |
 | Checkpoints | `checkpointLocation` per query (`bronze`, `silver`, `silver/_quarantine`) | one checkpoint per query; never shared |
 | Delivery guarantee | **effectively-once into Delta** (idempotent writes + checkpoint); source/producer are at-least-once → dedup layer makes Silver effectively unique | precise wording matters (see concepts doc) |
+
+**Why the watermark is wider than the lateness (measured).** In an append dedup,
+Spark *drops* records whose `event_time` is below the watermark — it does not
+merely evict their state. With the original 10-minute watermark and a 2-15 min
+producer delay, a **live** run (stream first) dropped ~137 valid orders: Bronze
+3277 rows / 3018 distinct keys → Silver only 2879-2882. Sizing the watermark to
+20 min (above the 15-min maximum lateness) keeps every distinct key. See
+`docs/CONCEPTS_AND_DESIGN_DECISIONS.md` §1.4 and `scripts/watermark_report.py`.
 
 ## 5. Gold job and compaction
 

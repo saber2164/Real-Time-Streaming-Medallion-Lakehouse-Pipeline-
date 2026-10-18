@@ -23,14 +23,14 @@ sales — with checkpointed fault tolerance and Delta `OPTIMIZE`/Z-ORDER compact
 flowchart LR
     P["Synthetic Producer<br/>(Python, confluent-kafka)<br/>~10% dups, ~10% late"] -->|produce key=order_id| R[("Redpanda<br/>topic: order-events<br/>3 partitions")]
     R -->|readStream kafka| B["BRONZE (Delta)<br/>raw JSON + kafka metadata<br/>/lakehouse/bronze/order_events"]
-    B -->|readStream delta| S["SILVER (Delta)<br/>parse · watermark 10m<br/>dropDuplicates(event_id,event_time)<br/>/lakehouse/silver/order_events"]
+    B -->|readStream delta| S["SILVER (Delta)<br/>parse · watermark 20m<br/>dropDuplicates(event_id,event_time)<br/>/lakehouse/silver/order_events"]
     S -->|batch| G["GOLD (Delta)<br/>hour × seller × payment_type<br/>OPTIMIZE ZORDER BY seller_id<br/>/lakehouse/gold/hourly_sales"]
     B -. unparseable .-> Q["quarantine<br/>/lakehouse/silver/_quarantine"]
 ```
 
 ```
  Producer ──produce──► Redpanda ──readStream──► BRONZE ──readStream(delta)──► SILVER ──batch──► GOLD
- (dup/late)          (order-events)            (raw+meta)                  (dedup, 10m wm)   (aggregates)
+ (dup/late)          (order-events)            (raw+meta)                  (dedup, 20m wm)   (aggregates)
 ```
 
 Only **Bronze** consumes Kafka; **Silver** reads the Bronze **Delta stream**, so the broker has
@@ -66,21 +66,25 @@ Reproduced from [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md); raw outputs in [`docs/
 
 `event_time` is when the order happened; processing time is when Spark saw it. The producer
 emits **late** events 2-15 minutes after their true time; the Silver query uses a
-**10-minute watermark**:
+**20-minute watermark** — deliberately **wider** than the 15-minute maximum lateness:
 
 ```
 event_time    arrives at    watermark now    outcome
 -----------   -----------   --------------   ------------------------------------------
 12:00:00      12:00:05      12:00:00         on time      -> parsed, dedup state kept
 12:04:00      12:07:00      12:01:00         within wm    -> deduped normally
-11:50:00      12:05:00      12:01:00         beyond wm    -> unique row still written,
-                                                            but dedup state may be gone,
-                                                            so a late DUPLICATE can slip
+12:00:00      12:17:00      12:07:00         beyond wm    -> DROPPED (append dedup) -- so the
+                                                             watermark must exceed max lateness
 ```
 
-This deliberate tension (delay up to 15 min vs. 10-min tolerance) is the real trade-off
-between **late-data completeness** and **bounded state**. Trade-offs and the tuning discussion
-live in [`docs/CONCEPTS_AND_DESIGN_DECISIONS.md`](docs/CONCEPTS_AND_DESIGN_DECISIONS.md#14-event-time-vs-processing-time-watermarks-state-store-late-data).
+**Measured, not theoretical.** An earlier configuration used a **10-minute** watermark while
+the producer delayed events up to 15 minutes. On a *live* run that **silently dropped 137
+valid orders** (Bronze 3277 rows / 3018 distinct keys → Silver only 2879). Locally this was
+hidden because the producer ran to completion *before* the stream started, so the whole
+backlog landed before the watermark advanced. Sizing the watermark above the lateness (20 min)
+fixes it: Silver now retains all 3018 distinct keys. Reproduce with
+`scripts/watermark_report.py`. The trade-offs and tuning discussion live in
+[`docs/CONCEPTS_AND_DESIGN_DECISIONS.md`](docs/CONCEPTS_AND_DESIGN_DECISIONS.md#14-event-time-vs-processing-time-watermarks-state-store-late-data).
 
 ## Why streaming is a batch problem in disguise (trade-offs & cost)
 

@@ -84,18 +84,35 @@ So `spark/stream_ingestion.py` gained two optional, documented switches:
 
 - **`STREAM_IDLE_TIMEOUT_SECONDS` (preferred).** Once at least one batch has been
   processed and then **no new input rows arrive for this many seconds**, the job
-  stops itself. Because the producer emits continuously, a gap of this length
-  means the source really is finished — so the whole Kafka → Bronze → Silver
-  cascade **drains fully** before exit.
+  stops itself, so the whole Kafka → Bronze → Silver cascade **drains fully**
+  before exit.
 - **`STREAM_MAX_SECONDS`** is only a backstop so a runner can never hang forever.
-  A fixed cap alone is *not* enough: an early cloud run used only a time cap and
-  exited while Bronze→Silver was still catching up (Silver had 2879 rows instead
-  of the full 3018), even though the producer output was identical. Drain-aware
-  stopping fixes that.
 
 Both default to `0` (disabled), preserving the original always-on behaviour for
-local use. These are the only code changes needed to make the pipeline
-CI/cloud-friendly.
+local use.
+
+### Two bugs the cloud runs exposed (both fixed)
+
+Running **live** (stream first, producer second) — which is how the cloud, and
+any real deployment, behaves — surfaced two issues that the "producer-first"
+local flow had hidden:
+
+1. **A 10-minute watermark silently dropped valid late events.** In an append
+   dedup, Spark *drops* any record whose `event_time` is below the watermark.
+   The producer delays events by 2-15 minutes, so a live run lost every order
+   delayed more than 10 minutes: Bronze had 3277 rows / 3018 distinct keys, but
+   Silver had only **2879-2882** rows. The fix is to size the watermark **above**
+   the maximum lateness (now **20 minutes**), so nothing valid is dropped.
+   Reproduce/diagnose with `scripts/watermark_report.py`.
+2. **The idle supervisor could stop mid-stream.** It summed each query's *last
+   micro-batch* row count, which is constant under steady input (e.g. ~250 rows
+   every 5 s), so it could declare "idle" while data was still arriving. It now
+   accumulates rows **monotonically** (deduped by `(query, batchId)`), so it
+   stops only when the pipeline genuinely drains.
+
+Both are covered by the verification suite: `tests/verify_silver_dedup.py` now
+also asserts that Silver retains **every** distinct Bronze key, which is what
+catches silent late-data loss.
 
 ---
 

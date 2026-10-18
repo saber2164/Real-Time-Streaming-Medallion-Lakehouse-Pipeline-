@@ -50,9 +50,11 @@ Key design choices
   Kafka directly. One Kafka consumption feeds Bronze only; Silver is derived
   from Bronze. This keeps Kafka offsets owned by a single query (no double
   consumption), and lets Silver be rebuilt by replaying Bronze.
-- Dedup key = ["event_id", "event_time"] with a 10-minute watermark. event_id
-  is the true identity (producer deliberately duplicates it); event_time must
-  be in the key so Spark can expire state (otherwise state grows unbounded).
+- Dedup key = ["event_id", "event_time"] with a 20-minute watermark (sized
+  above the producer's 2-15 min max lateness, so Spark never drops a valid late
+  event). event_id is the true identity (producer deliberately duplicates it);
+  event_time must be in the key so Spark can expire state (otherwise state grows
+  unbounded).
 - Unparseable JSON rows are routed to a quarantine path instead of being
   dropped silently.
 - Separate checkpointLocation per query (Bronze vs Silver vs quarantine).
@@ -241,7 +243,8 @@ def build_silver_stream(bronze_df):
     Steps:
       1. Parse raw_payload JSON with an explicit StructType.
       2. Split rows into good (parsed) vs quarantine (unparseable).
-      3. withWatermark("event_time", "10 minutes") — bounds state for dedup.
+      3. withWatermark("event_time", WATERMARK) — bounds state for dedup. Sizes
+         above the producer's max lateness so no valid late event is dropped.
       4. dropDuplicates(["event_id", "event_time"]) — stateful dedup.
       5. Add derived columns: event_date, total_amount = price + freight_value.
       6. Write good rows to Silver; write bad rows to the quarantine path.
@@ -323,20 +326,23 @@ def log_progress(query):
         return
     logger.info(
         "PROGRESS %s: inputRows=%s inputRowsPerSecond=%s "
-        "stateOperators=%s batchDurationMs=%s",
+        "numRowsDroppedByWatermark=%s stateOperators=%s batchDurationMs=%s",
         query.name,
         progress.get("numInputRows"),
         progress.get("inputRowsPerSecond"),
+        progress.get("numRowsDroppedByWatermark"),
         len(progress.get("stateOperators") or []),
         (progress.get("durationMs") or {}).get("addBatch"),
     )
     for so in progress.get("stateOperators") or []:
         logger.info(
-            "STATE %s: numRowsTotal=%s numUpdatedRows=%s numRowsRemoved=%s",
+            "STATE %s: numRowsTotal=%s numUpdatedRows=%s numRowsRemoved=%s "
+            "numRowsDroppedByWatermark=%s",
             so.get("operatorName"),
             so.get("numRowsTotal"),
             so.get("numUpdatedRows"),
             so.get("numRowsRemoved"),
+            so.get("numRowsDroppedByWatermark"),
         )
 
 
@@ -357,14 +363,32 @@ def handle_signal(signum, frame):
     sys.exit(0)
 
 
+_SEEN_BATCHES = set()
+_CUM_INPUT_ROWS = 0
+
+
 def _total_input_rows():
-    """Sum numInputRows across the active queries' last micro-batches."""
-    total = 0
+    """Cumulative input rows observed across the active queries (monotonic).
+
+    IMPORTANT: ``lastProgress["numInputRows"]`` is the row count of the *most
+    recent* micro-batch, not a running total. Under steady input the per-batch
+    count is often identical (e.g. ~250 rows every 5 s), so summing last-batch
+    counts is *constant* while data is still flowing -- which previously made
+    the idle supervisor stop mid-stream. We instead accumulate every batch we
+    have not counted yet (deduped by ``(query, batchId)``), so the value only
+    grows while new input arrives and freezes exactly when the pipeline drains.
+    """
+    global _CUM_INPUT_ROWS
     for q in ACTIVE_QUERIES:
-        progress = q.lastProgress
-        if progress:
-            total += progress.get("numInputRows", 0) or 0
-    return total
+        for progress in q.recentProgress:
+            batch_id = progress.get("batchId")
+            if batch_id is None:
+                continue
+            key = (getattr(q, "name", "?"), batch_id)
+            if key not in _SEEN_BATCHES:
+                _SEEN_BATCHES.add(key)
+                _CUM_INPUT_ROWS += progress.get("numInputRows", 0) or 0
+    return _CUM_INPUT_ROWS
 
 
 def start_stop_supervisor(max_seconds: int, idle_seconds: int):

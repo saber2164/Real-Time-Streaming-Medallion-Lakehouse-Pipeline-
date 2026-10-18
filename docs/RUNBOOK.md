@@ -155,7 +155,9 @@ python3 tests/test_producer_logic.py     # 5/5 pass
 | Producer image build fails on `COPY` | build context is `./producer` | Dockerfile copies `requirements.txt` then `.` relative to that context |
 | `topic-init` fails on the second `up` | `rpk topic create` errors if the topic exists | `sh -c '… create … || … describe … >/dev/null'` |
 | `spark-submit` can't find the Delta/Kafka jars | jars are not baked into the image | pass `--packages …` on every `spark-submit` (first run downloads to `./.ivy2`, which is mounted and cached) |
-| Silver has rows that look duplicated after a late duplicate | 10-min watermark vs producer's 2-15 min delay | expected; see the late-data analysis in `CONCEPTS_AND_DESIGN_DECISIONS.md` |
+| Silver has **fewer** rows than Bronze's distinct keys | the watermark is **shorter** than the producer's maximum lateness, so Spark *drops* valid late events (append dedup) | set `WATERMARK` above max lateness (now `20 minutes` > the 15-min delay); diagnose with `scripts/watermark_report.py` |
+| Silver has rows that look duplicated after a late duplicate | watermark window vs producer's 2-15 min delay | expected within the window; see the late-data analysis in `CONCEPTS_AND_DESIGN_DECISIONS.md` |
+| Streaming job stops before draining the topic | idle supervisor saw a constant per-batch row count (pre-fix) | fixed: `_total_input_rows()` is now monotonic/cumulative |
 
 ## Doc-Sync
 
