@@ -1,0 +1,45 @@
+# .gitignore
+
+# Lakehouse & checkpoints (bind-mounted Docker volumes — never commit data)
+lakehouse/
+checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+.venv/
+venv/
+.env
+.env.*
+!example.env
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.eggs/
+*.egg-info/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Spark / Ivy / Jupyter caches
+.spark_cache/
+.ivy2/
+*.parquet
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+*.log
+node_modules/
