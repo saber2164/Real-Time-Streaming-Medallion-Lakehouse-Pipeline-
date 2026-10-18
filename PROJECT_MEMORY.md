@@ -6,10 +6,16 @@
 
 ## Current Status
 
-**Phases 0-7 COMPLETE (verified with real measurements). Phase 8 (publish) pending.**
+**Phases 0-8 COMPLETE (verified with real measurements).**
 The full pipeline has run end to end: producer -> Redpanda -> Bronze Delta ->
 Silver Delta (dedup) -> Gold (aggregate + OPTIMIZE/ZORDER), plus an
-ungraceful-crash recovery test. All documentation and the showcase page are written.
+ungraceful-crash recovery test. All documentation and the showcase page are
+written, and the repo is pushed with a live GitHub Pages site.
+
+**Published:**
+- Repo: https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-
+- Pages: https://saber2164.github.io/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/
+  (live, HTTP 200, built from `main` `/docs`, commit bb880f4).
 
 **Assessment (2026-10-18, session 2):**
 
@@ -29,16 +35,14 @@ ungraceful-crash recovery test. All documentation and the showcase page are writ
   `CHANGELOG.md`.
 - ✅ Phase 7 web page: `docs/index.html` (self-contained, light/dark, inline SVG,
   OpenGraph tags) built from measured results.
-- ⬜ Phase 8 publish.
+- ✅ Phase 8 publish: pushed to `main`; GitHub Pages enabled (source `main` /docs);
+  repo description + 8 topics set; live page verified HTTP 200.
 
 ## Next Actions
 
-1. Phase 8: push to `main` (requires the user to authenticate to GitHub); enable
-   GitHub Pages (source `main`, folder `/docs`); set repo description/topics
-   (`data-engineering`, `spark`, `delta-lake`, `redpanda`, `kafka`, `streaming`,
-   `lakehouse`, `medallion-architecture`).
-2. Verify the live Pages page loads; report final repo + Pages links, measured
-   results, and known limitations to the user.
+Nothing outstanding. Optional future work: add a `VACUUM` step to physically drop
+tombstoned files, add a scheduled Gold refresh, or move to `foreachBatch` MERGE if
+late-arriving data must update past hours.
 
 ## Decisions Log
 
@@ -150,10 +154,8 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 
 ## Open Questions
 
-- GitHub auth for pushing to the target repo: the user must authenticate
-  (SSH key / `gh auth login`). Do not ask the user to paste a token into chat.
-  Push not yet attempted.
-- MIT `LICENSE`: proceeding with MIT (doc default) unless the user says otherwise.
+- None blocking. GitHub push auth resolved (stored credential); Pages live.
+- MIT `LICENSE` used (doc default).
 
 ## Doc Sync Checklist
 
