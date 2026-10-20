@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Order Revenue — Medallion Lakehouse Dashboard</title>
+<meta name="description" content="Live stakeholder dashboard for the Redpanda → PySpark Structured Streaming → Delta Lake Medallion pipeline. Gold-layer revenue, orders, sellers and pipeline health, refreshed from a real Delta lakehouse." />
+<meta name="color-scheme" content="light dark" />
+<style>
+  :root {
+    --bg: #f7f8fa; --surface: #ffffff; --surface-2: #eef1f5;
+    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
+    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
+    --amber: #b45309; --red: #b42318;
+    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+    --radius: 16px; --maxw: 1180px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
+      --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
+      --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
+      --amber: #fbbf24; --red: #f87171;
+      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8fa; --surface: #fff; --surface-2: #eef1f5;
+    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
+    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
+    --amber: #b45309; --red: #b42318;
+    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
+    --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
+    --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
+    --amber: #fbbf24; --red: #f87171;
+    --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
+  header {
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 9%, var(--surface)), var(--surface) 62%);
+    padding: 26px 0 22px;
+  }
+  .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .eyebrow { font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: clamp(1.45rem, 3.4vw, 2.15rem); line-height: 1.1; margin: 6px 0 6px; letter-spacing: -.02em; }
+  .sub { color: var(--muted); margin: 0; font-size: .95rem; }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; align-items: center; }
+  .flow span { font-size: .76rem; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; }
+  .flow .arrow { background: none; border: 0; padding: 0 1px; }
+  .status-box { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 190px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px;
+    font-size: .82rem; font-weight: 700; border: 1px solid var(--border); background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .pill.live { color: var(--accent-3); border-color: color-mix(in srgb, var(--accent-3) 45%, var(--border)); }
+  .pill.live .dot { background: var(--accent-3); animation: pulse 1.8s ease-in-out infinite; }
+  .pill.stale { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
+  .pill.stale .dot { background: var(--amber); }
+  .pill.waiting { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 45%, var(--border)); }
+  .pill.waiting .dot { background: var(--accent-2); }
+  .pill.error { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+  .pill.error .dot { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .updated { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit; font-size: .78rem; font-weight: 600; color: var(--text); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 9px; padding: 6px 11px; cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  button:hover { border-color: var(--accent-2); }
+  button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+  main { padding: 24px 0 44px; }
+  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 16px; box-shadow: var(--shadow); min-width: 0; }
+  .kpi .label { font-size: .73rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+  .kpi .value { font-size: clamp(1.25rem, 2.2vw, 1.72rem); font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .foot { font-size: .76rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 18px; box-shadow: var(--shadow); min-width: 0; }
+  .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-12 { grid-column: span 12; }
+  h2 { font-size: 1rem; margin: 0 0 3px; letter-spacing: -.01em; }
+  .card .hint { color: var(--muted); font-size: .78rem; margin: 0 0 10px; }
+  .chart { width: 100%; min-height: 210px; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .empty { color: var(--muted); font-size: .88rem; padding: 48px 8px; text-align: center; margin: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: .78rem; color: var(--muted); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .donut-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .donut-wrap svg { width: 190px; height: 190px; flex: 0 0 auto; }
+  .donut-legend { flex: 1 1 150px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .donut-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; font-size: .8rem; }
+  .donut-row .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .donut-row .name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .donut-row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .bars { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
+  .bar-row { display: grid; grid-template-columns: 92px 1fr 86px; gap: 10px; align-items: center; }
+  .bar-label { font-size: .78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bar-track { height: 16px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--surface))); transition: width .35s ease; }
+  .bar-value { font-size: .78rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .pipe { margin-top: 14px; }
+  .pipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 8px; }
+  .pipe-item { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; min-width: 0; }
+  .pipe-item .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+  .pipe-item .v { font-size: .98rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note { color: var(--muted); font-size: .8rem; border-left: 3px solid var(--accent-2); background: var(--surface-2); border-radius: 8px; padding: 10px 13px; margin: 14px 0 0; }
+  .note code { background: color-mix(in srgb, var(--surface) 70%, transparent); padding: 1px 5px; border-radius: 5px; }
+  footer { border-top: 1px solid var(--border); padding: 18px 0 34px; color: var(--muted); font-size: .78rem; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .theme { position: fixed; top: 12px; right: 12px; z-index: 10; }
+  .skip { position: absolute; left: -999px; } .skip:focus { left: 12px; top: 12px; background: var(--surface); padding: 8px 12px; border-radius: 8px; z-index: 30; }
+  @media (max-width: 1000px) {
+    .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .span-7, .span-5 { grid-column: span 12; }
+  }
+  @media (max-width: 560px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bar-row { grid-template-columns: 76px 1fr 74px; }
+    .status-box { align-items: flex-start; }
+    .updated { text-align: left; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .pill.live .dot { animation: none; }
+    .bar-fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<button class="theme" id="themeToggle" aria-label="Toggle colour theme">◐</button>
+
+<header>
+  <div class="wrap header-row">
+    <div>
+      <div class="eyebrow">Medallion lakehouse · Gold layer</div>
+      <h1>Live order revenue</h1>
+      <p class="sub">Stakeholder view of the streaming pipeline — numbers read from the Gold Delta table.</p>
+      <div class="flow" aria-label="Pipeline flow">
+        <span>Redpanda</span><span class="arrow">→</span>
+        <span>Bronze</span><span class="arrow">→</span>
+        <span>Silver · dedup</span><span class="arrow">→</span>
+        <span>Gold · hourly</span><span class="arrow">→</span>
+        <span>/api/metrics</span>
+      </div>
+    </div>
+    <div class="status-box">
+      <span class="pill waiting" id="statusPill" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span><span id="statusText">Connecting…</span>
+      </span>
+      <div class="updated" id="updated">Waiting for the first snapshot</div>
+      <div class="controls">
+        <button id="pauseBtn" aria-pressed="false">Pause</button>
+        <button id="refreshBtn">Refresh now</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="kpis" aria-label="Key metrics">
+    <div class="kpi" data-kpi="revenue">
+      <div class="label">Product revenue</div>
+      <div class="value" id="kpiRevenue">—</div>
+      <div class="foot" id="kpiRevenueFoot">sum of order_created price</div>
+    </div>
+    <div class="kpi" data-kpi="orders">
+      <div class="label">Orders</div>
+      <div class="value" id="kpiOrders">—</div>
+      <div class="foot" id="kpiOrdersFoot">order_created events</div>
+    </div>
+    <div class="kpi" data-kpi="aov">
+      <div class="label">Avg order value</div>
+      <div class="value" id="kpiAov">—</div>
+      <div class="foot">revenue ÷ orders</div>
+    </div>
+    <div class="kpi" data-kpi="sellers">
+      <div class="label">Sellers</div>
+      <div class="value" id="kpiSellers">—</div>
+      <div class="foot" id="kpiSellersFoot">distinct seller_id in Gold</div>
+    </div>
+    <div class="kpi" data-kpi="dedup">
+      <div class="label">Duplicates removed</div>
+      <div class="value" id="kpiDedup">—</div>
+      <div class="foot" id="kpiDedupFoot">watermark dedup</div>
+    </div>
+    <div class="kpi" data-kpi="age">
+      <div class="label">Newest event</div>
+      <div class="value" id="kpiAge">—</div>
+      <div class="foot" id="kpiAgeFoot">arrival age</div>
+    </div>
+  </section>
+
+  <section class="grid" aria-label="Charts">
+    <div class="card span-7">
+      <h2>Events arriving per minute</h2>
+      <p class="hint">Broker timestamp, all event types. The lower line counts <code>order_created</code> only.</p>
+      <div class="chart" id="eventsChart" role="img" aria-label="Events arriving per minute"></div>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:var(--accent-2)"></span>All events</span>
+        <span class="key"><span class="swatch" style="background:var(--accent)"></span>Orders created</span>
+      </div>
+    </div>
+
+    <div class="card span-5">
+      <h2>Payment mix</h2>
+      <p class="hint">Share of product revenue by payment type.</p>
+      <div class="donut-wrap" id="paymentChart" role="img" aria-label="Payment mix by revenue"></div>
+    </div>
+
+    <div class="card span-7">
+      <h2>Top sellers by revenue</h2>
+      <p class="hint">Gold grain: hour × seller × payment type. Showing the top 10.</p>
+      <div class="bars" id="sellerChart" role="img" aria-label="Top sellers by revenue"></div>
+    </div>
+
+    <div class="card span-5">
+      <h2>Revenue by hour</h2>
+      <p class="hint">Event time (when the order happened), last 12 hourly buckets.</p>
+      <div class="chart" id="hourChart" role="img" aria-label="Revenue by hour"></div>
+    </div>
+  </section>
+
+  <section class="card pipe" aria-label="Pipeline health">
+    <h2>Pipeline health</h2>
+    <p class="hint">Counts across the Medallion layers and the streaming guarantees in force.</p>
+    <div class="pipe-grid" id="pipeline"></div>
+    <p class="note" id="pipelineNote">Waiting for the first metrics snapshot.</p>
+  </section>
+
+  <p class="note">
+    This page polls <code>/api/metrics</code> every 3 s. <code>gold_refresh.py</code> recomputes Gold
+    from the Silver Delta table every 10 s and atomically replaces the JSON snapshot. Values are
+    read-only and come from real tables — there is no sample or placeholder data. The dashboard
+    does not read Kafka or Delta directly, so it can never disagree with the Gold job's logic.
+  </p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Redpanda · PySpark Structured Streaming · Delta Lake — 100% local, MIT.</span>
+    <span id="sourceLine">Source: Gold Delta table → metrics.json</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var REFRESH_MS = 3000;
+  var state = { paused: false, last: null, lastOkAt: null, lastError: null };
+
+  function $(id) { return document.getElementById(id); }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+  function svgEl(name, attrs) {
+    var node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    }
+    return node;
+  }
+  function svgText(x, y, str, attrs) {
+    var node = svgEl("text", Object.assign({ x: x, y: y }, attrs || {}));
+    node.textContent = str;
+    return node;
+  }
+  function empty(host, message) {
+    clear(host);
+    var p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = message;
+    host.appendChild(p);
+  }
+
+  var moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  var money2Fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var numFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+  function isNum(v) { return typeof v === "number" && isFinite(v); }
+  function money(v) { return isNum(v) ? moneyFmt.format(v) : "—"; }
+  function money2(v) { return isNum(v) ? money2Fmt.format(v) : "—"; }
+  function num(v) { return isNum(v) ? numFmt.format(v) : "—"; }
+  function pct(v) { return isNum(v) ? v.toFixed(1) + "%" : "—"; }
+
+  function duration(seconds) {
+    if (!isNum(seconds)) return "—";
+    var s = Math.max(0, Math.round(seconds));
+    if (s < 60) return s + "s";
+    var m = Math.floor(s / 60), rem = s % 60;
+    if (m < 60) return m + "m " + rem + "s";
+    var h = Math.floor(m / 60);
+    return h + "h " + (m % 60) + "m";
+  }
+
+  function clock(iso, withSeconds) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: withSeconds ? "2-digit" : undefined });
+  }
+
+  function niceCeil(value) {
+    if (!isNum(value) || value <= 0) return 1;
+    var pow = Math.pow(10, Math.floor(Math.log10(value)));
+    var n = value / pow;
+    var step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+    return step * pow;
+  }
+
+  function setText(id, value, title) {
+    var node = $(id);
+    if (!node) return;
+    node.textContent = value;
+    if (title) node.title = title;
+  }
+
+  // ---------------------------------------------------------------- KPIs
+  function renderKpis(data) {
+    var k = (data && data.kpis) || {};
+    setText("kpiRevenue", money(k.total_revenue), "Sum of order_created price in Gold");
+    setText("kpiRevenueFoot", isNum(k.gold_rows) ? num(k.gold_rows) + " Gold rows" : "sum of order_created price");
+    setText("kpiOrders", num(k.total_orders), "Sum of hourly_order_count in Gold");
+    setText("kpiOrdersFoot", isNum(k.payment_types) ? num(k.payment_types) + " payment types" : "order_created events");
+    setText("kpiAov", isNum(k.avg_order_value) ? money2(k.avg_order_value) : "—");
+    setText("kpiSellers", num(k.sellers));
+    setText("kpiSellersFoot", isNum(k.gold_rows) ? num(k.gold_rows) + " seller-hour groups" : "distinct seller_id in Gold");
+    setText("kpiDedup", num(k.duplicates_removed));
+    setText("kpiDedupFoot", isNum(k.dedup_rate_pct) ? pct(k.dedup_rate_pct) + " of Bronze" : "watermark dedup");
+    setText("kpiAge", isNum(k.data_freshness_seconds) ? duration(k.data_freshness_seconds) : "—");
+    setText("kpiAgeFoot", isNum(k.bronze_rows) ? num(k.bronze_rows) + " Bronze rows" : "arrival age");
+  }
+
+  // ----------------------------------------------------------- line chart
+  function renderEvents(host, points) {
+    clear(host);
+    if (!points || !points.length) {
+      empty(host, "Waiting for the first micro-batch…");
+      return;
+    }
+    var W = 720, H = 250;
+    var P = { l: 52, r: 16, t: 16, b: 34 };
+    var maxVal = points.reduce(function (m, p) { return Math.max(m, p.events || 0, p.orders || 0); }, 0);
+    var top = niceCeil(maxVal);
+    var iw = W - P.l - P.r, ih = H - P.t - P.b;
+    var x = function (i) { return P.l + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw); };
+    var y = function (v) { return P.t + ih - ((v || 0) / top) * ih; };
+
+    var root = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Events and orders per minute" });
+    var title = svgEl("title", {});
+    title.textContent = "Events arriving per minute. Latest: " + num(points[points.length - 1].events) + " events, " + num(points[points.length - 1].orders) + " orders.";
+    root.appendChild(title);
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = P.t + ih - (g / 4) * ih;
+      root.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--border)", "stroke-width": 1 }));
+      root.appendChild(svgText(P.l - 8, gy + 4, num(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--muted)", "font-size": 10 }));
+    }
+
+    function linePath(key) {
+      return points.map(function (p, i) { return (i ? "L" : "M") + x(i).toFixed(1) + "," + y(p[key]).toFixed(1); }).join(" ");
+    }
+
+    var area = linePath("events") + " L" + x(points.length - 1).toFixed(1) + "," + (P.t + ih) + " L" + x(0).toFixed(1) + "," + (P.t + ih) + " Z";
+    root.appendChild(svgEl("path", { d: area, fill: "var(--accent-2)", opacity: 0.12 }));
+    root.appendChild(svgEl("path", { d: linePath("events"), fill: "none", stroke: "var(--accent-2)", "stroke-width": 2.4, "stroke-linejoin": "round" }));
+    root.appendChild(svgEl("path", { d: linePath("orders"), fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
+
+    var last = points.length - 1;
+    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].events), r: 3.6, fill: "var(--accent-2)" }));
+    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].orders), r: 3.6, fill: "var(--accent)" }));
+
+    var indexes = [0, last];
+    if (points.length > 3) indexes.push(Math.round(last / 2));
+    var seen = {};
+    indexes.sort(function (a, b) { return a - b; }).forEach(function (i) {
+      if (seen[i]) return;
+      seen[i] = true;
+      var anchor = i === 0 ? "start" : i === last ? "end" : "middle";
+      root.appendChild(svgText(x(i), H - 10, clock(points[i].minute), { "text-anchor": anchor, fill: "var(--muted)", "font-size": 10 }));
+    });
+
+    host.appendChild(root);
+  }
+
+  // ------------------------------------------------------------- donut
+  function renderPayment(host, items) {
+    clear(host);
+    if (!items || !items.length) {
+      empty(host, "Waiting for the first Gold aggregate…");
+      return;
+    }
+    var total = items.reduce(function (s, i) { return s + (i.revenue || 0); }, 0);
+    if (total <= 0) {
+      empty(host, "No revenue in the current Gold table.");
+      return;
+    }
+    var colors = ["var(--accent)", "var(--accent-2)", "var(--accent-3)", "#8b5cf6", "#f59e0b"];
+    var C = 2 * Math.PI * 62;
+    var svg = svgEl("svg", { viewBox: "0 0 190 190", role: "img", "aria-label": "Payment mix by revenue" });
+    var t = svgEl("title", {});
+    t.textContent = items.map(function (i) { return i.payment_type + ": " + money(i.revenue); }).join(", ");
+    svg.appendChild(t);
+    svg.appendChild(svgEl("circle", { cx: 95, cy: 95, r: 62, fill: "none", stroke: "var(--surface-2)", "stroke-width": 26 }));
+
+    var offset = 0;
+    items.forEach(function (item, idx) {
+      var frac = (item.revenue || 0) / total;
+      var len = Math.max(frac * C - 1.5, 0);
+      var circle = svgEl("circle", {
+        cx: 95, cy: 95, r: 62, fill: "none",
+        stroke: colors[idx % colors.length],
+        "stroke-width": 26,
+        "stroke-dasharray": len.toFixed(2) + " " + (C - len).toFixed(2),
+        "stroke-dashoffset": (-offset).toFixed(2),
+        transform: "rotate(-90 95 95)"
+      });
+      var ct = svgEl("title", {});
+      ct.textContent = item.payment_type + ": " + money(item.revenue) + " (" + (frac * 100).toFixed(1) + "%)";
+      circle.appendChild(ct);
+      svg.appendChild(circle);
+      offset += frac * C;
+    });
+
+    svg.appendChild(svgText(95, 91, money(total), { "text-anchor": "middle", fill: "var(--text)", "font-size": 16, "font-weight": 700 }));
+    svg.appendChild(svgText(95, 108, "product revenue", { "text-anchor": "middle", fill: "var(--muted)", "font-size": 9.5 }));
+    host.appendChild(svg);
+
+    var legend = document.createElement("div");
+    legend.className = "donut-legend";
+    items.forEach(function (item, idx) {
+      var row = document.createElement("div");
+      row.className = "donut-row";
+      var sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.background = colors[idx % colors.length];
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = item.payment_type + " · " + ((item.revenue / total) * 100).toFixed(1) + "%";
+      var val = document.createElement("span");
+      val.className = "val";
+      val.textContent = money(item.revenue);
+      row.appendChild(sw); row.appendChild(name); row.appendChild(val);
+      legend.appendChild(row);
+    });
+    host.appendChild(legend);
+  }
+
+  // -------------------------------------------------------------- bars
+  function renderSellers(host, items) {
+    clear(host);
+    if (!items || !items.length) {
+      empty(host, "Waiting for the first Gold aggregate…");
+      return;
+    }
+    var max = items.reduce(function (m, i) { return Math.max(m, i.revenue || 0); }, 0) || 1;
+    items.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "bar-row";
+      var label = document.createElement("span");
+      label.className = "bar-label";
+      label.textContent = item.seller_id;
+      label.title = item.seller_id;
+      var track = document.createElement("div");
+      track.className = "bar-track";
+      var fill = document.createElement("div");
+      fill.className = "bar-fill";
+      fill.style.width = Math.max((item.revenue / max) * 100, 1.5) + "%";
+      fill.title = money(item.revenue) + " · " + num(item.orders) + " orders";
+      track.appendChild(fill);
+      var value = document.createElement("span");
+      value.className = "bar-value";
+      value.textContent = money(item.revenue);
+      row.appendChild(label); row.appendChild(track); row.appendChild(value);
+      host.appendChild(row);
+    });
+  }
+
+  // --------------------------------------------------------- hour bars
+  function renderHours(host, points) {
+    clear(host);
+    if (!points || !points.length) {
+      empty(host, "Waiting for the first Gold aggregate…");
+      return;
+    }
+    points = points.slice(-12);
+    var W = 420, H = 220;
+    var P = { l: 48, r: 12, t: 18, b: 34 };
+    var top = niceCeil(points.reduce(function (m, p) { return Math.max(m, p.revenue || 0); }, 0));
+    var iw = W - P.l - P.r, ih = H - P.t - P.b;
+    var slot = iw / points.length;
+    var barW = Math.max(Math.min(slot * 0.56, 46), 10);
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Revenue by hour" });
+    var t = svgEl("title", {});
+    t.textContent = "Revenue by hour. Latest: " + money(points[points.length - 1].revenue) + ".";
+    svg.appendChild(t);
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = P.t + ih - (g / 4) * ih;
+      svg.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--border)", "stroke-width": 1 }));
+      svg.appendChild(svgText(P.l - 8, gy + 4, money(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--muted)", "font-size": 9.5 }));
+    }
+
+    points.forEach(function (p, i) {
+      var h = Math.max(((p.revenue || 0) / top) * ih, 1.5);
+      var bx = P.l + slot * i + (slot - barW) / 2;
+      var by = P.t + ih - h;
+      var rect = svgEl("rect", { x: bx, y: by, width: barW, height: h, rx: 5, fill: "var(--accent-3)" });
+      var rt = svgEl("title", {});
+      rt.textContent = clock(p.hour_start) + " · " + money(p.revenue) + " · " + num(p.orders) + " orders";
+      rect.appendChild(rt);
+      svg.appendChild(rect);
+      svg.appendChild(svgText(bx + barW / 2, H - 12, clock(p.hour_start), { "text-anchor": "middle", fill: "var(--muted)", "font-size": 9.5 }));
+    });
+
+    host.appendChild(svg);
+  }
+
+  // ----------------------------------------------------------- pipeline
+  function pipeItem(label, value) {
+    var div = document.createElement("div");
+    div.className = "pipe-item";
+    var k = document.createElement("div");
+    k.className = "k";
+    k.textContent = label;
+    var v = document.createElement("div");
+    v.className = "v";
+    v.textContent = value;
+    v.title = value;
+    div.appendChild(k); div.appendChild(v);
+    return div;
+  }
+
+  function renderPipeline(data) {
+    var host = $("pipeline");
+    var k = (data && data.kpis) || {};
+    var p = (data && data.pipeline) || {};
+    clear(host);
+    host.appendChild(pipeItem("Bronze rows", num(k.bronze_rows)));
+    host.appendChild(pipeItem("Silver rows (deduped)", num(k.silver_rows)));
+    host.appendChild(pipeItem("Gold rows", num(k.gold_rows)));
+    host.appendChild(pipeItem("Quarantine rows", num(k.quarantine_rows)));
+    host.appendChild(pipeItem("Duplicates removed", num(k.duplicates_removed) + (isNum(k.dedup_rate_pct) ? " · " + pct(k.dedup_rate_pct) : "")));
+    host.appendChild(pipeItem("Watermark", p.watermark || "—"));
+    host.appendChild(pipeItem("Dedup key", (p.dedup_keys || []).join(", ") || "—"));
+    host.appendChild(pipeItem("Gold version", isNum(p.gold_version) ? num(p.gold_version) : "—"));
+    host.appendChild(pipeItem("Avg lateness", duration(k.avg_lateness_seconds)));
+    host.appendChild(pipeItem("p95 lateness", duration(k.p95_lateness_seconds)));
+    host.appendChild(pipeItem("Max lateness", duration(k.max_lateness_seconds)));
+    host.appendChild(pipeItem("Gold updated", p.gold_updated_at ? clock(p.gold_updated_at, true) : "—"));
+
+    var note = $("pipelineNote");
+    if (data && data.status === "waiting") {
+      note.textContent = data.message || "Waiting for the first Gold refresh.";
+    } else if (data && data.pipeline) {
+      note.textContent = "Bronze → Silver dedup removes " + num(k.duplicates_removed) + " duplicate records (" + pct(k.dedup_rate_pct) + "). Silver → Gold keeps only order_created. Gold is recomputed from Silver, never from Kafka.";
+      $("sourceLine").textContent = "Source: " + p.gold_path + " → metrics.json";
+    }
+  }
+
+  // ------------------------------------------------------------- status
+  function statusKind(data, error) {
+    if (error) return { kind: "error", text: "Disconnected" };
+    if (!data) return { kind: "waiting", text: "Connecting…" };
+    if (data.status === "waiting") return { kind: "waiting", text: "Waiting for data" };
+    var generated = Date.parse(data.generated_at);
+    var age = isNaN(generated) ? null : (Date.now() - generated) / 1000;
+    var limit = Math.max(60, 4 * (data.refresh_seconds || 10));
+    if (age !== null && age > limit) return { kind: "stale", text: "Stale snapshot" };
+    return { kind: "live", text: "Live" };
+  }
+
+  function updateStatus(data, error) {
+    var pill = $("statusPill");
+    var info = statusKind(data, error);
+    pill.className = "pill " + info.kind;
+    if (state.paused) {
+      pill.className = "pill waiting";
+      $("statusText").textContent = "Paused";
+    } else {
+      $("statusText").textContent = info.text;
+    }
+
+    if (error) {
+      $("updated").textContent = "Cannot reach /api/metrics — retrying every 3 s";
+      return;
+    }
+    if (!data) {
+      $("updated").textContent = "Waiting for the first snapshot";
+      return;
+    }
+    if (data.status === "waiting") {
+      $("updated").textContent = data.message || "Waiting for the first Gold refresh";
+      return;
+    }
+    if (state.paused) {
+      $("updated").textContent = "Snapshot " + clock(data.generated_at, true) + " · paused";
+      return;
+    }
+    var generated = Date.parse(data.generated_at);
+    var age = isNaN(generated) ? null : (Date.now() - generated) / 1000;
+    $("updated").textContent = "Gold snapshot " + duration(age) + " ago · " + clock(data.generated_at, true) +
+      (isNum(data.kpis && data.kpis.data_freshness_seconds) ? " · newest event " + duration(data.kpis.data_freshness_seconds) + " ago" : "");
+  }
+
+  // -------------------------------------------------------------- render
+  function render(data) {
+    renderKpis(data);
+    var charts = (data && data.charts) || {};
+    renderEvents($("eventsChart"), charts.events_by_minute || []);
+    renderPayment($("paymentChart"), charts.payment_mix || []);
+    renderSellers($("sellerChart"), charts.top_sellers || []);
+    renderHours($("hourChart"), charts.revenue_by_hour || []);
+    renderPipeline(data);
+  }
+
+  async function tick() {
+    if (state.paused) return;
+    try {
+      var res = await fetch("/api/metrics", { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var data = await res.json();
+      state.last = data;
+      state.lastError = null;
+      state.lastOkAt = Date.now();
+      render(data);
+      updateStatus(data, null);
+    } catch (err) {
+      state.lastError = err;
+      updateStatus(state.last, err);
+    }
+  }
+
+  $("pauseBtn").addEventListener("click", function () {
+    state.paused = !state.paused;
+    this.textContent = state.paused ? "Resume" : "Pause";
+    this.setAttribute("aria-pressed", String(state.paused));
+    updateStatus(state.last, state.lastError);
+    if (!state.paused) tick();
+  });
+
+  $("refreshBtn").addEventListener("click", function () {
+    state.paused = false;
+    $("pauseBtn").textContent = "Pause";
+    $("pauseBtn").setAttribute("aria-pressed", "false");
+    tick();
+  });
+
+  (function theme() {
+    var root = document.documentElement;
+    var btn = $("themeToggle");
+    var saved = null;
+    try { saved = localStorage.getItem("dashboard-theme"); } catch (e) {}
+    if (saved) root.setAttribute("data-theme", saved);
+    btn.addEventListener("click", function () {
+      var current = root.getAttribute("data-theme");
+      if (!current) current = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      var next = current === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("dashboard-theme", next); } catch (e) {}
+    });
+  })();
+
+  // Tick the relative timestamps every second without refetching.
+  setInterval(function () {
+    if (state.last) updateStatus(state.last, state.lastError);
+    else if (state.lastError) updateStatus(null, state.lastError);
+  }, 1000);
+
+  tick();
+  setInterval(tick, REFRESH_MS);
+})();
+</script>
+</body>
+</html>

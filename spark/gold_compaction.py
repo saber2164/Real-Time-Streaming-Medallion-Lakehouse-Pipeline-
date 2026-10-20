@@ -51,15 +51,6 @@ import sys
 import logging
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    date_trunc,
-    to_date,
-    count,
-    sum as _sum,
-    avg,
-    lit,
-)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (  # noqa: E402
@@ -69,6 +60,7 @@ from config import (  # noqa: E402
     GOLD_WRITE_MODE,
     GOLD_ZORDER_COL,
 )
+from gold_logic import build_gold_dataframe, write_gold  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -165,38 +157,32 @@ def main():
     silver = spark.read.format("delta").load(SILVER_PATH)
     logger.info("Silver rows: %s", silver.count())
 
-    # 2. Filter order_created only (revenue/count use order_created to avoid double counting).
-    created = silver.filter(col("event_type") == "order_created")
-
-    # 3. Aggregate per hour / seller / payment type.
-    gold_df = (
-        created.withColumn("hour_start", date_trunc("hour", col("event_time")))
-        .groupBy("hour_start", "seller_id", "payment_type")
-        .agg(
-            count("*").alias("hourly_order_count"),
-            _sum("price").alias("total_revenue"),
-            _sum("freight_value").alias("total_freight"),
-            avg("freight_value").alias("avg_freight_cost"),
-        )
-        .withColumn("event_date", to_date(col("hour_start")))
-    )
+    # 2. Filter order_created, then aggregate per hour / seller / payment type.
+    #    The transformation lives in gold_logic.py so this batch job and the live
+    #    dashboard refresher share exactly one implementation.
+    gold_df = build_gold_dataframe(silver)
 
     gold_row_count = gold_df.count()
     logger.info("Gold aggregate rows: %s", gold_row_count)
 
-    # 4. Write idempotently (overwrite).
-    gold_df.write.format("delta").mode(GOLD_WRITE_MODE).option(
-        "overwriteSchema", "true"
-    ).save(GOLD_PATH)
+    # 3. Write idempotently (overwrite).
+    write_gold(gold_df, GOLD_PATH, GOLD_WRITE_MODE)
     logger.info("Wrote Gold table to %s (mode=%s)", GOLD_PATH, GOLD_WRITE_MODE)
 
-    # Independent verification: recompute from Silver and compare row count.
-    verify = (
-        spark.read.format("delta").load(GOLD_PATH)
-    )
-    logger.info("Verified Gold rows after write: %s", verify.count())
+    # Read back the written table and check that the write was complete.
+    # (tests/verify_gold.py does the independent recompute from Silver.)
+    written_gold_rows = spark.read.format("delta").load(GOLD_PATH).count()
+    logger.info("Read back Gold rows after write: %s", written_gold_rows)
+    if written_gold_rows != gold_row_count:
+        logger.error(
+            "Gold write mismatch: expected %s rows, found %s",
+            gold_row_count,
+            written_gold_rows,
+        )
+        spark.stop()
+        sys.exit(1)
 
-    # 5. Compaction: OPTIMIZE + ZORDER on Gold, then Bronze & Silver.
+    # 4. Compaction: OPTIMIZE + ZORDER on Gold, then Bronze & Silver.
     run_optimize(spark, GOLD_PATH, GOLD_ZORDER_COL)
 
     # Bronze & Silver accumulate small files from streaming micro-batches;

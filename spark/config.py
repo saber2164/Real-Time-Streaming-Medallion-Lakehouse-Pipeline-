@@ -82,3 +82,25 @@ GOLD_WRITE_MODE = "overwrite"
 # ZORDER column for compaction. seller_id only (event_date would be a
 # partition column and cannot be Z-ordered; customer_id is not in Gold).
 GOLD_ZORDER_COL = "seller_id"
+
+# ---------------------------------------------------------------------------
+# Live dashboard / serving layer
+# ---------------------------------------------------------------------------
+# The Gold refresher recomputes Gold from Silver on this cadence (seconds) and
+# writes a small JSON snapshot for the read-only dashboard to serve. 10 s is
+# near-real-time for humans; the pipeline itself still micro-batches every 5 s.
+GOLD_REFRESH_SECONDS = int(os.getenv("GOLD_REFRESH_SECONDS", "10"))
+
+# Optional wall-clock cap for the refresher loop (0 = run until signalled).
+# Useful as a safety backstop for scripted demos; normal use is 0.
+GOLD_REFRESH_MAX_SECONDS = int(os.getenv("GOLD_REFRESH_MAX_SECONDS", "0"))
+
+# How long to wait for the Silver table to appear before writing a "waiting"
+# snapshot (e.g. when the dashboard starts before the streaming job).
+SILVER_WAIT_TIMEOUT_SECONDS = int(os.getenv("SILVER_WAIT_TIMEOUT_SECONDS", "600"))
+
+# JSON contract consumed by dashboard/server.py. Lives inside the (gitignored)
+# lakehouse volume: it is data, not source code.
+DASHBOARD_METRICS_PATH = os.getenv(
+    "DASHBOARD_METRICS_PATH", "/lakehouse/dashboard/metrics.json"
+)

@@ -133,6 +133,68 @@ services:
     profiles:
       - producer
 
+  ###############################################################################
+  # Live Gold refresher — recomputes Gold from Silver every 10 s and writes the
+  # dashboard's JSON snapshot. Optional profile: it is not part of the canonical
+  # one-shot run (gold_compaction.py remains the end-of-run compaction job).
+  #
+  #   docker-compose --profile dashboard up -d gold-refresh dashboard
+  ###############################################################################
+  gold-refresh:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    environment:
+      - BRONZE_PATH=/lakehouse/bronze/order_events
+      - SILVER_PATH=/lakehouse/silver/order_events
+      - GOLD_PATH=/lakehouse/gold/hourly_sales
+      - QUARANTINE_PATH=/lakehouse/silver/_quarantine
+      - DASHBOARD_METRICS_PATH=/lakehouse/dashboard/metrics.json
+      - GOLD_REFRESH_SECONDS=10
+      - PYTHONUNBUFFERED=1
+      - SPARK_UI_PORT=4042
+    volumes:
+      - ./lakehouse:/lakehouse
+      - ./checkpoints:/checkpoints
+      - ./spark:/opt/spark/app
+      - ./.ivy2:/root/.ivy2
+    command:
+      - spark-submit
+      - --master
+      - local[2]
+      - --packages
+      - io.delta:delta-spark_2.12:3.2.0
+      - /opt/spark/app/gold_refresh.py
+    networks:
+      - lakehouse-net
+    profiles:
+      - dashboard
+    restart: unless-stopped
+    stop_grace_period: 60s
+
+  ###############################################################################
+  # Stakeholder dashboard — read-only HTTP server for the Gold-layer metrics.
+  # No Spark/Delta access: it only serves the JSON written by gold-refresh.
+  # Bound to 127.0.0.1 so it is not exposed on the LAN by default.
+  ###############################################################################
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    environment:
+      - METRICS_PATH=/lakehouse/dashboard/metrics.json
+      - PORT=8501
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./lakehouse:/lakehouse:ro
+    networks:
+      - lakehouse-net
+    profiles:
+      - dashboard
+    restart: unless-stopped
+    init: true
+
 networks:
   lakehouse-net:
     driver: bridge
