@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "status": "live",
+  "generated_at": "2026-10-20T16:12:33Z",
+  "refresh_seconds": 10,
+  "kpis": {
+    "total_revenue": 269805.58,
+    "total_orders": 1055,
+    "avg_order_value": 255.74,
+    "sellers": 20,
+    "payment_types": 3,
+    "gold_rows": 60,
+    "silver_rows": 3018,
+    "bronze_rows": 3277,
+    "quarantine_rows": 0,
+    "duplicates_removed": 259,
+    "dedup_rate_pct": 7.9,
+    "data_freshness_seconds": 168674.79,
+    "avg_lateness_seconds": 188.51,
+    "max_lateness_seconds": 1000.0,
+    "p95_lateness_seconds": 557.0
+  },
+  "pipeline": {
+    "watermark": "20 minutes",
+    "dedup_keys": [
+      "event_id",
+      "event_time"
+    ],
+    "gold_version": 2,
+    "gold_updated_at": "2026-10-20T16:04:01Z",
+    "bronze_path": "/lakehouse/bronze/order_events",
+    "silver_path": "/lakehouse/silver/order_events",
+    "gold_path": "/lakehouse/gold/hourly_sales"
+  },
+  "charts": {
+    "events_by_minute": [
+      {
+        "minute": "2026-10-18T17:20:00Z",
+        "events": 1882,
+        "orders": 688,
+        "revenue": 191113.15
+      },
+      {
+        "minute": "2026-10-18T17:21:00Z",
+        "events": 1136,
+        "orders": 367,
+        "revenue": 107091.46
+      }
+    ],
+    "revenue_by_hour": [
+      {
+        "hour_start": "2026-10-18T17:00:00Z",
+        "revenue": 269805.58,
+        "orders": 1055
+      }
+    ],
+    "top_sellers": [
+      {
+        "seller_id": "seller_214",
+        "revenue": 15852.71,
+        "orders": 64
+      },
+      {
+        "seller_id": "seller_208",
+        "revenue": 15851.81,
+        "orders": 61
+      },
+      {
+        "seller_id": "seller_203",
+        "revenue": 15830.6,
+        "orders": 56
+      },
+      {
+        "seller_id": "seller_204",
+        "revenue": 15518.35,
+        "orders": 62
+      },
+      {
+        "seller_id": "seller_213",
+        "revenue": 14686.99,
+        "orders": 61
+      },
+      {
+        "seller_id": "seller_218",
+        "revenue": 14614.82,
+        "orders": 52
+      },
+      {
+        "seller_id": "seller_201",
+        "revenue": 14158.59,
+        "orders": 54
+      },
+      {
+        "seller_id": "seller_207",
+        "revenue": 14044.44,
+        "orders": 47
+      },
+      {
+        "seller_id": "seller_211",
+        "revenue": 13656.49,
+        "orders": 51
+      },
+      {
+        "seller_id": "seller_210",
+        "revenue": 13638.77,
+        "orders": 53
+      }
+    ],
+    "payment_mix": [
+      {
+        "payment_type": "bank_transfer",
+        "revenue": 92250.83,
+        "orders": 345
+      },
+      {
+        "payment_type": "credit_card",
+        "revenue": 89523.41,
+        "orders": 350
+      },
+      {
+        "payment_type": "paypal",
+        "revenue": 88031.34,
+        "orders": 360
+      }
+    ]
+  }
+}

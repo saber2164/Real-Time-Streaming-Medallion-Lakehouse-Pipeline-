@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Real-Time Streaming & Medallion Lakehouse Pipeline — Redpanda · Spark · Delta Lake</title>
-<meta name="description" content="A 100% local Medallion lakehouse: Redpanda (Kafka) → PySpark Structured Streaming → Delta Lake, with event-time watermark dedup, checkpoint recovery, and OPTIMIZE/Z-ORDER compaction. Real measured results." />
+<meta name="description" content="A 100% local Medallion lakehouse: Redpanda (Kafka) → PySpark Structured Streaming → Delta Lake, with event-time watermark dedup, checkpoint recovery, OPTIMIZE/Z-ORDER compaction, and a live read-only dashboard. Real measured results." />
 <meta name="author" content="Harshit Thakkar" />
 <meta name="color-scheme" content="light dark" />
 <meta property="og:type" content="website" />
@@ -106,6 +106,15 @@
   .layer-pill { display:inline-block; width:.62rem; height:.62rem; border-radius:50%; margin-right:7px; vertical-align: middle; }
   .b { background: var(--accent-2);} .s { background: var(--accent-3);} .g { background: var(--accent);}
   .note { font-size: .86rem; color: var(--muted); background: var(--surface-2); border-left: 3px solid var(--accent-2); padding: 10px 14px; border-radius: 8px; }
+  .bars { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+  .bar-row { display: grid; grid-template-columns: 7.5rem 1fr 5.5rem; align-items: center; gap: 10px; margin: 8px 0; }
+  .bar-label { font-size: .84rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; background: var(--accent-2); }
+  .bar-value { font-size: .82rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { display:inline-block; font-size:.75rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+         color: var(--accent-3); border:1px solid color-mix(in srgb, var(--accent-3) 45%, var(--border));
+         background: color-mix(in srgb, var(--accent-3) 12%, var(--surface)); border-radius:999px; padding:2px 9px; }
   footer { padding: 28px 0 50px; color: var(--muted); font-size: .88rem; }
   .toggle {
     position: fixed; top: 14px; right: 14px; z-index: 20; cursor: pointer;
@@ -141,6 +150,7 @@
       <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">View on GitHub</a>
       <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Run it in the cloud (free)</a>
       <a class="btn" href="#results">See measured results</a>
+      <a class="btn" href="#dashboard">Live dashboard</a>
       <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
     </div>
   </div>
@@ -305,8 +315,72 @@
       <code>docs/assets/</code> (verify runs, Gold run, Delta inspector, recovery run).</p>
   </section>
 
+  <section id="dashboard">
+    <h2><span class="num">06</span>Live dashboard</h2>
+    <p class="lead">A read-only stakeholder view of the Gold layer: revenue, orders, average
+      order value, top sellers, payment mix, hourly revenue, duplicates removed, watermark
+      lateness and pipeline health. The page polls <code>/api/metrics</code> every <strong>3
+      seconds</strong> and shows an explicit waiting/stale state — it never falls back to sample
+      data.</p>
+
+    <p><span class="tag">Captured live run</span> &nbsp; Isolated verification run
+      (<code>order-events-dashboard</code>, separate paths), snapshot
+      <code>2026-10-20T16:07:27Z</code>. This is a frozen capture on a static page; the
+      canonical dataset is the 3,277 → 3,018 → 60 run above.</p>
+
+    <div class="kpis">
+      <div class="kpi"><div class="v">$219,392.90</div><div class="l">revenue (order_created)</div></div>
+      <div class="kpi"><div class="v">863</div><div class="l">orders</div></div>
+      <div class="kpi"><div class="v">$254.22</div><div class="l">average order value</div></div>
+      <div class="kpi"><div class="v">20</div><div class="l">sellers</div></div>
+      <div class="kpi"><div class="v">201</div><div class="l">duplicates removed (7.68%)</div></div>
+      <div class="kpi"><div class="v">2,616</div><div class="l">Bronze rows</div></div>
+      <div class="kpi"><div class="v">2,415</div><div class="l">Silver rows</div></div>
+      <div class="kpi"><div class="v">96</div><div class="l">Gold rows</div></div>
+    </div>
+
+    <h3>Top 5 sellers by revenue</h3>
+    <div class="bars" role="img" aria-label="Bar chart: top five sellers by revenue from the captured live run">
+      <div class="bar-row"><div class="bar-label">seller_203</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$13,931.37</div></div>
+      <div class="bar-row"><div class="bar-label">seller_204</div><div class="bar-track"><div class="bar-fill" style="width:99.5%"></div></div><div class="bar-value">$13,861.42</div></div>
+      <div class="bar-row"><div class="bar-label">seller_214</div><div class="bar-track"><div class="bar-fill" style="width:95.3%"></div></div><div class="bar-value">$13,281.34</div></div>
+      <div class="bar-row"><div class="bar-label">seller_218</div><div class="bar-track"><div class="bar-fill" style="width:93.5%"></div></div><div class="bar-value">$13,026.79</div></div>
+      <div class="bar-row"><div class="bar-label">seller_210</div><div class="bar-track"><div class="bar-fill" style="width:90.1%"></div></div><div class="bar-value">$12,552.08</div></div>
+    </div>
+
+    <h3>Payment mix</h3>
+    <div class="bars" role="img" aria-label="Bar chart: revenue by payment type from the captured live run">
+      <div class="bar-row"><div class="bar-label">bank_transfer</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$77,529.15</div></div>
+      <div class="bar-row"><div class="bar-label">credit_card</div><div class="bar-track"><div class="bar-fill" style="width:93.3%"></div></div><div class="bar-value">$72,364.15</div></div>
+      <div class="bar-row"><div class="bar-label">paypal</div><div class="bar-track"><div class="bar-fill" style="width:89.6%"></div></div><div class="bar-value">$69,499.60</div></div>
+    </div>
+
+    <p class="note" style="margin-top:16px">Verified during that run: Silver 2,415 = 2,415
+      distinct keys; Bronze distinct keys 2,415; 0 bad amounts; Gold 96 rows; orders 863 = 863;
+      revenue 219,392.90 = 219,392.90; 0 mismatched groups;
+      <code>numRowsDroppedByWatermark = 0</code>. Freshness 40.7 s, lateness avg 187 s / p95
+      532 s / max 999 s, across 20 refresh cycles (Gold version 0 → 19; the committed API
+      snapshot was captured at version 11).</p>
+
+<pre><code># one command: Redpanda + stream + Gold refresher + dashboard + producer
+bash scripts/live_dashboard.sh
+# open http://localhost:8501  (poll every 3 s)
+bash scripts/stop_live_dashboard.sh
+
+# CI-safe read-only snapshot (preserves OPTIMIZE/ZORDER and Gold version)
+docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
+  /opt/spark/app/gold_refresh.py --once --metrics-only
+python3 tests/verify_dashboard_metrics.py lakehouse/dashboard/metrics.json</code></pre>
+
+    <p>Design, JSON contract, limits and troubleshooting:
+      <a href="../docs/DASHBOARD.md">docs/DASHBOARD.md</a>. Evidence:
+      <a href="assets/dashboard_live_metrics.json">live API snapshot</a> ·
+      <a href="assets/dashboard_live_verify.txt">independent Silver/Gold verification</a> ·
+      <a href="assets/dashboard_live_refresh.txt">20 refresh cycles</a>.</p>
+  </section>
+
   <section id="tradeoffs">
-    <h2><span class="num">06</span>Trade-offs: streaming vs. scheduled batch</h2>
+    <h2><span class="num">07</span>Trade-offs: streaming vs. scheduled batch</h2>
     <p class="lead">Structured Streaming is an incremental batch loop. It buys low latency at the
       cost of always-on compute and stateful complexity.</p>
     <table>
@@ -322,7 +396,7 @@
   </section>
 
   <section id="run">
-    <h2><span class="num">07</span>How to run</h2>
+    <h2><span class="num">08</span>How to run</h2>
 <pre><code># start the stack (Redpanda, Console, topic-init, Spark)
 docker-compose build spark &amp;&amp; docker-compose up -d
 
@@ -342,12 +416,14 @@ docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:
 docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 /opt/spark/tests/verify_silver_dedup.py
 bash tests/verify_recovery.sh</code></pre>
     <p>Console · <a href="http://localhost:8080">localhost:8080</a> &nbsp;·&nbsp; Spark UI ·
-      <a href="http://localhost:4040">localhost:4040</a>. Full steps in
+      <a href="http://localhost:4040">localhost:4040</a> &nbsp;·&nbsp; Dashboard ·
+      <a href="http://localhost:8501">localhost:8501</a> (after
+      <code>scripts/live_dashboard.sh</code>). Full steps in
       <a href="../docs/RUNBOOK.md">docs/RUNBOOK.md</a>.</p>
   </section>
 
   <section id="cloud">
-    <h2><span class="num">08</span>Run it in the cloud (free)</h2>
+    <h2><span class="num">09</span>Run it in the cloud (free)</h2>
     <p class="lead">The whole pipeline can run on GitHub's cloud runners on demand — no local
       install, no cloud account, no cost.</p>
     <p><a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml"><img
@@ -359,9 +435,9 @@ bash tests/verify_recovery.sh</code></pre>
     </div>
     <p style="margin-top:16px">A GitHub Actions workflow
       (<code>.github/workflows/demo-run.yml</code>) spins up Redpanda, streams events through
-      Bronze → Silver → Gold on an ephemeral runner, runs the same verification scripts, and
-      uploads the evidence as artifacts. You can set the producer duration/rate/seed when you
-      start it.</p>
+      Bronze → Silver → Gold on an ephemeral runner, runs the same verification scripts,
+      generates a read-only dashboard snapshot, calls the dashboard API, and uploads the
+      evidence as artifacts. You can set the producer duration/rate/seed when you start it.</p>
     <p class="note">How the trigger works: GitHub Pages is <em>static</em> (it serves files, it
       cannot run code), and a browser must never hold a cloud key. So the button opens GitHub's
       secure "Run workflow" page, which requires your GitHub login — that is the authentication
@@ -371,12 +447,13 @@ bash tests/verify_recovery.sh</code></pre>
   </section>
 
   <section id="links">
-    <h2><span class="num">09</span>Links</h2>
+    <h2><span class="num">10</span>Links</h2>
     <div class="cta">
       <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">GitHub repository</a>
       <a class="btn" href="../README.md">README</a>
       <a class="btn" href="../docs/ARCHITECTURE.md">Architecture</a>
       <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
+      <a class="btn" href="../docs/DASHBOARD.md">Dashboard</a>
       <a class="btn" href="../docs/RUNBOOK.md">Runbook</a>
       <a class="btn" href="../docs/CLOUD_DEMO.md">Cloud demo</a>
       <a class="btn" href="../PROJECT_MEMORY.md">Project memory</a>

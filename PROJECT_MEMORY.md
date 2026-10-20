@@ -6,11 +6,27 @@
 
 ## Current Status
 
-**Phases 0-8 COMPLETE (verified with real measurements).**
+**Phases 0-8 COMPLETE (verified with real measurements); Phase 9 (live dashboard) COMPLETE.**
 The full pipeline has run end to end: producer -> Redpanda -> Bronze Delta ->
 Silver Delta (dedup) -> Gold (aggregate + OPTIMIZE/ZORDER), plus an
-ungraceful-crash recovery test. All documentation and the showcase page are
-written, and the repo is pushed with a live GitHub Pages site.
+ungraceful-crash recovery test and a read-only live dashboard. All documentation
+and the showcase page are written, and the repo is pushed with a live GitHub
+Pages site.
+
+**Dashboard (2026-10-20):**
+- `spark/gold_refresh.py` recomputes Gold every 10 s and writes an atomic
+  `metrics.json`; `dashboard/server.py` (stdlib only) serves it on
+  `127.0.0.1:8501`; the page polls every 3 s.
+- `spark/gold_logic.py` is shared by batch and live Gold, so the numbers cannot
+  drift.
+- Isolated live run verified: Bronze 2,616 -> Silver 2,415 (201 duplicates,
+  quarantine 0), Gold 96, 863 orders, revenue 219,392.90, 20 refreshes
+  (Gold version 0 -> 19; committed API snapshot at 11),
+  `numRowsDroppedByWatermark = 0`.
+- Canonical read-only snapshot preserved Gold version 2: Bronze 3,277 ->
+  Silver 3,018, Gold 60, 1,055 orders, revenue 269,805.58.
+- Cloud workflow now generates `--once --metrics-only` metrics, starts the
+  dashboard, calls `/healthz` + `/api/metrics`, and runs the contract test.
 
 **Published:**
 - Repo: https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-
@@ -19,6 +35,8 @@ written, and the repo is pushed with a live GitHub Pages site.
 - Cloud demo: `.github/workflows/demo-run.yml` — run the whole pipeline free on
   GitHub Actions from the Actions tab / the showcase page button
   (`docs/CLOUD_DEMO.md`).
+- Live dashboard: `scripts/live_dashboard.sh` -> http://localhost:8501;
+  design/contract/limits in `docs/DASHBOARD.md`.
 
 **Assessment (2026-10-18, session 2):**
 
@@ -34,18 +52,25 @@ written, and the repo is pushed with a live GitHub Pages site.
   producer Dockerfile build, Silver-from-Bronze wiring, `delayed` double count,
   duration enforcement, env-default handling, quarantine path nesting.
 - ✅ Phase 6 docs: `README.md`, `docs/ARCHITECTURE.md`,
-  `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` (19 Q&A), `docs/RUNBOOK.md`, `LICENSE` (MIT),
-  `CHANGELOG.md`.
+  `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` (23 Q&A), `docs/DASHBOARD.md`,
+  `docs/RUNBOOK.md`, `LICENSE` (MIT), `CHANGELOG.md`.
 - ✅ Phase 7 web page: `docs/index.html` (self-contained, light/dark, inline SVG,
   OpenGraph tags) built from measured results.
 - ✅ Phase 8 publish: pushed to `main`; GitHub Pages enabled (source `main` /docs);
   repo description + 8 topics set; live page verified HTTP 200.
+- ✅ Phase 9 live dashboard: read-only stdlib server, shared Gold logic, atomic
+  metrics snapshot, 3 s polling, inline SVG charts, Compose `dashboard` profile,
+  live isolated run + canonical snapshot + independent verification. Evidence in
+  `docs/assets/dashboard_live_*` and `docs/assets/dashboard_canonical_metrics.json`.
 
 ## Next Actions
 
-Nothing outstanding. Optional future work: add a `VACUUM` step to physically drop
-tombstoned files, add a scheduled Gold refresh, or move to `foreachBatch` MERGE if
-late-arriving data must update past hours.
+Nothing outstanding for the project itself. Optional future work: add a `VACUUM`
+step to physically drop tombstoned files; upgrade the dashboard to incremental
+Gold materialization (`MERGE`/`foreachBatch`) and SSE/WebSocket push; add
+auth/TLS before exposing it beyond localhost. The live demo intentionally
+appends to the canonical tables — reset first if you need the exact documented
+counts.
 
 ## Decisions Log
 
@@ -65,6 +90,15 @@ late-arriving data must update past hours.
 | 2026-10-18 | Drain-aware stop via `STREAM_IDLE_TIMEOUT_SECONDS`; `STREAM_MAX_SECONDS` demoted to backstop | a fixed wall-clock cap | Lets a bounded run drain Kafka → Bronze → Silver before exit instead of relying on a wall-clock cap. Does **not** by itself explain the Silver shortfall (that was the watermark — see next row) |
 | 2026-10-18 | **Watermark `10 minutes` → `20 minutes`** | shrink the producer's 2-15 min lateness, or accept loss | In `append` dedup Spark **drops** records below the watermark. A live run lost 137 valid unique orders (Bronze 3277/3018 distinct → Silver 2879-2882). Sizing the watermark **above** the max lateness keeps every key (`numRowsDroppedByWatermark=0`) while preserving the realistic late-data stress |
 | 2026-10-18 | Make the idle supervisor count input rows **monotonically** | keep summing each query's last micro-batch | `lastProgress["numInputRows"]` is per-batch (constant under steady input), so the supervisor could declare "idle" mid-stream and stop early (observed: Bronze 2574 of 3277). Cumulative counting stops only on a true drain |
+| 2026-10-20 | Dashboard reads a **precomputed JSON snapshot**, not Delta | direct Spark/Delta query from the web tier; a BI tool | No Spark/JVM in the serving path, no credentials in the browser, one aggregate per 10 s cycle instead of one scan per tab, and the read-only server cannot mutate the lakehouse. Trade-off: ~10 s staleness |
+| 2026-10-20 | Share Gold logic in `spark/gold_logic.py` | duplicate SQL in batch and live jobs | Batch `gold_compaction.py` and live `gold_refresh.py` must produce the same grain/revenue; one function prevents drift |
+| 2026-10-20 | Dashboard is an opt-in Compose **profile**, bound to `127.0.0.1:8501` | start it by default; bind `0.0.0.0` | A plain `docker-compose up -d` keeps the original behavior; the dashboard is localhost-only and not exposed on the LAN |
+| 2026-10-20 | Poll `/api/metrics` every **3 s**; stdlib server; inline SVG; no CDN | WebSocket/SSE; React + chart library | Simple, robust, offline-capable, tiny supply chain; 3 s is ample for stakeholders. SSE is the upgrade path for sub-second |
+| 2026-10-20 | Recompute Gold every **10 s** with `overwrite` | incremental `MERGE`; skip unchanged writes | At this scale a full recompute is simple and idempotent. Known limit: a new Gold version per cycle (live test: 20 cycles -> version 19); at scale skip unchanged Silver versions and use incremental MERGE |
+| 2026-10-20 | CI uses `gold_refresh.py --once --metrics-only` **after** compaction | normal `--once`; metrics before compaction | A normal `--once` overwrites Gold and would undo `OPTIMIZE/ZORDER`; `--metrics-only` reads the compacted Gold table and only writes the JSON, preserving the Gold version |
+| 2026-10-20 | Live dashboard demo on isolated topic `order-events-dashboard` and `/lakehouse/dashboard-demo/*` | reuse canonical `order-events`/paths | Keeps the canonical 3277/3018/60 dataset untouched while proving continuous refresh; cleaned up afterwards |
+| 2026-10-20 | Cloud dashboard assertions are **invariant-based** | hardcoded 3277/3018/60/1055 | Workflow inputs (`duration`, `rate`, `seed`) are configurable; the contract test asserts accounting identities and shapes instead |
+| 2026-10-20 | Visual verification via browser DOM + API/logs | screenshot | Browser screenshots were unavailable in the build environment (no visible desktop window); DOM evaluation confirmed Live status, KPIs, chart element counts and zero console errors |
 
 ## Environment Facts
 
@@ -80,6 +114,8 @@ late-arriving data must update past hours.
 | Console image | redpandadata/console:v2.8.4 |
 | kafka connector | org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 (passed via --packages at runtime) |
 | Spark / Scala / Java | Spark 3.5.3 / Scala 2.12 / Java 21.0.12.1 |
+| Dashboard image | `p2-dashboard` (python:3.11-slim, stdlib only, no pip packages) |
+| Dashboard port | `127.0.0.1:8501` (Compose profile `dashboard`) |
 
 ## Commands That Worked
 
@@ -92,6 +128,13 @@ late-arriving data must update past hours.
 - `docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 /opt/spark/scripts/inspect_delta.py`
 - `bash tests/verify_recovery.sh`
 - `docker exec p2-redpanda-1 rpk topic list --brokers redpanda:9092`
+- `bash scripts/live_dashboard.sh` — start Redpanda + stream + Gold refresher + dashboard + continuous producer
+- `bash scripts/stop_live_dashboard.sh` — stop the live demo
+- `docker-compose --profile dashboard up -d --build gold-refresh dashboard` — refresher + dashboard only
+- `docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 /opt/spark/app/gold_refresh.py --once` — one Gold + metrics refresh
+- `docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 /opt/spark/app/gold_refresh.py --once --metrics-only` — metrics only, preserve Gold version/compaction
+- `python3 tests/verify_dashboard_metrics.py lakehouse/dashboard/metrics.json` — contract + accounting identity
+- `curl -s http://127.0.0.1:8501/healthz` and `curl -s http://127.0.0.1:8501/api/metrics`
 
 ## Bugs & Fixes
 
@@ -114,6 +157,9 @@ late-arriving data must update past hours.
 | Cloud run: `spark-submit` fails with `/usr/lib/jvm/java-21-openjdk-arm64/bin/java: No such file or directory` | `Dockerfile.spark` hardcoded the arm64 Java path, which does not exist on amd64 CI runners; `ps` also missing | Point `JAVA_HOME` at an arch-neutral symlink `/usr/lib/jvm/java-21`; install `procps` |
 | **Valid late events silently lost** (Silver 2879-2882, not 3018) | `append` dedup + a 10-min watermark **shorter** than the producer's 15-min max lateness → Spark *drops* sub-watermark records. Masked locally because the producer ran to completion *before* the stream (backlog landed while the watermark was still 0) | Watermark `10 minutes` → `20 minutes` (above max lateness). Verified live: Bronze 3277 / 3018 distinct → Silver **3018**, `numRowsDroppedByWatermark=0`. Added `scripts/watermark_report.py` + a Bronze-completeness invariant in `tests/verify_silver_dedup.py` |
 | Idle supervisor stopped the stream **mid-run** (Bronze 2574 of 3277) | `_total_input_rows()` summed each query's *last micro-batch* row count — constant under steady input, so "no change" was mistaken for idle | Accumulate rows monotonically, deduped by `(query, batchId)`; the value only grows while input arrives |
+| Dashboard metrics step after compaction would undo `OPTIMIZE`/ZORDER | A normal `gold_refresh.py --once` rewrites Gold (mode overwrite) | Added `--metrics-only`: read the existing Gold table, write only `metrics.json`, preserve Gold version/compaction. CI uses it after `gold_compaction.py` |
+| "Newest event" KPI was ambiguous | It used the newest **Kafka ingestion** timestamp, not `event_time` | Relabeled the UI "Newest event / arrival age"; docs define it as wall clock minus newest `kafka_timestamp` |
+| Refresh cycles wrote identical Gold files when no new data arrived | Full recompute/overwrite every cycle (design choice at this scale) | Documented as a limitation: skip writes when Silver's version is unchanged or move to incremental MERGE at scale; live test reached Gold version 19 in 20 cycles |
 
 ## Measured Results
 
@@ -192,6 +238,39 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
   - **Cloud == local canonical** (Silver 3018, Gold 60, revenue 269805.58): the fix
     restored correctness and cross-environment reproducibility.
 
+### Phase 9 - Live dashboard (2026-10-20)
+
+Isolated live run (canonical tables untouched):
+
+- Topic `order-events-dashboard`; paths `/lakehouse/dashboard-demo/{bronze,silver,gold}`,
+  quarantine `/lakehouse/dashboard-demo/silver/_quarantine`, checkpoints
+  `/checkpoints/dashboard-demo`.
+- Stream started **before** the producer; producer 60 s @ 40 events/s, ~10%
+  duplicates and ~10% late; refresher every 5 s for the test (shipped default 10 s).
+- Dashboard API snapshot captured at `2026-10-20T16:07:27Z` (Gold version 11):
+  Bronze **2616**, Silver **2415**, duplicates **201** (7.68%), quarantine **0**,
+  Gold **96**, orders **863**, revenue **219392.90**, AOV **254.22**, sellers **20**.
+- Counts while open: t1 Bronze 926 / Silver 708 / orders 238 / revenue 56345.40;
+  t2 1726 / 1438 / 519 / 128841.28; final 2616 / 2415 / 863 / 219392.90.
+- Data freshness 40.68 s (wall clock - newest Kafka ingestion timestamp);
+  lateness avg 187 s / p95 532 s / max 999 s.
+- `numRowsDroppedByWatermark = 0` throughout; final dedupe state `numRowsTotal=2415`.
+- Refresher completed **20 cycles**, Gold version `0 -> 19`. The committed API
+  snapshot is version 11; counts were stable after version 9 and later cycles
+  refreshed the same numbers.
+- Independent `verify_silver_dedup.py`: Silver 2415 = distinct `event_id` 2415 =
+  distinct `(event_id, event_time)` 2415; Bronze distinct dedup keys 2415; bad
+  `total_amount` 0. `verify_gold.py`: Gold 96 rows, duplicate grain keys 0,
+  order_count 863 = 863, revenue 219392.9 = 219392.9, mismatched groups 0.
+- Browser DOM (live page): status **Live**, KPIs `$219,393 / 863 / $254.22 / 20 /
+  201`, 10 seller bars, 2 hourly bars, 4 donut SVG circles, zero console errors.
+- Canonical read-only snapshot (`--once --metrics-only`, `2026-10-20T16:12:33Z`):
+  Bronze 3277, Silver 3018, duplicates 259, Gold 60, orders 1055, revenue
+  269805.58, Gold version **2 preserved** (no rewrite). Contract test PASS.
+- Evidence: `docs/assets/dashboard_live_metrics.json`,
+  `dashboard_live_refresh.txt`, `dashboard_live_ingest.txt`,
+  `dashboard_live_verify.txt`, `dashboard_canonical_metrics.json`.
+
 ### Stack / UI
 - Redpanda topic `order-events`: 3 partitions, 1 replica.
 - Console reachable at http://localhost:8080 (HTTP 200), connected to Kafka.
@@ -206,13 +285,15 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 - [x] README.md (full: architecture, grain, measured results, how-to-run, limitations)
 - [x] docs/ARCHITECTURE.md
 - [x] docs/CONCEPTS_AND_DESIGN_DECISIONS.md
+- [x] docs/DASHBOARD.md (new: serving layer, JSON contract, live run, limits)
 - [x] docs/RUNBOOK.md
 - [x] docs/CLOUD_DEMO.md
-- [x] docs/index.html (includes "Run it in the cloud" section + button)
-- [x] .github/workflows/demo-run.yml
-- [x] CHANGELOG.md (Unreleased section current through Phase 7)
+- [x] docs/index.html (includes "Run it in the cloud" + live dashboard sections)
+- [x] .github/workflows/demo-run.yml (dashboard metrics + API contract)
+- [x] CHANGELOG.md (Unreleased section current through Phase 9)
 - [x] LICENSE (MIT) added
 - [x] PROJECT_MEMORY.md (current)
+- [x] docs/assets/dashboard_live_* + dashboard_canonical_metrics.json
 
 > Doc-sync pass (2026-10-18): every number in README/docs matches
 > `Measured Results` above and the raw evidence in `docs/assets/`.
@@ -223,3 +304,11 @@ All numbers below are from commands actually run; raw evidence is in `docs/asset
 > probe: 137 unique events lost). Watermark raised to 20 min and the idle supervisor
 > made monotonic; README, ARCHITECTURE, CONCEPTS, RUNBOOK, CLOUD_DEMO, CHANGELOG and
 > index.html were all updated to the measured explanation.
+>
+> Dashboard pass (2026-10-20): added `docs/DASHBOARD.md`, `tests/verify_dashboard_metrics.py`,
+> the Compose `dashboard` profile, live-run evidence, and cloud API verification.
+> README, ARCHITECTURE, CONCEPTS (23 Q&A), RUNBOOK, CLOUD_DEMO, CHANGELOG,
+> docs/index.html and this file were updated from the actual live run and
+> `--metrics-only` canonical snapshot. Numbers in this file match
+> `docs/assets/dashboard_live_metrics.json` and
+> `docs/assets/dashboard_canonical_metrics.json`.

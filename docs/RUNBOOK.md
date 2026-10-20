@@ -90,6 +90,50 @@ Expected (measured): Gold rows = 60; `verify_gold` PASS
 (order_count 1055 = 1055; total_revenue 269805.58 = 269805.58).
 Compaction: Bronze active files 3→1, Silver 4→1, Gold 1→1.
 
+## 5.1 Live dashboard (optional)
+
+One command starts the full live demo (Redpanda, stream, Gold refresher, dashboard,
+continuous producer):
+
+```bash
+scripts/live_dashboard.sh
+# open http://localhost:8501
+scripts/stop_live_dashboard.sh
+```
+
+> This appends to the real `./lakehouse` and `./checkpoints` tables. Run the reset
+> in §8 first if you want the canonical counts to stay exactly 3277/3018/60.
+
+Manual control:
+
+```bash
+# Refresher + dashboard only
+docker-compose --profile dashboard up -d --build gold-refresh dashboard
+
+# Follow refresher/dashboard logs
+docker-compose --profile dashboard logs -f gold-refresh dashboard
+
+# One snapshot from existing tables (rewrites Gold)
+docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
+  /opt/spark/app/gold_refresh.py --once
+
+# Read-only snapshot: preserve OPTIMIZE/ZORDER and the Gold version
+docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
+  /opt/spark/app/gold_refresh.py --once --metrics-only
+
+# Contract + accounting identity (host Python, stdlib only)
+python3 tests/verify_dashboard_metrics.py lakehouse/dashboard/metrics.json
+
+# Health + raw API
+curl -s http://127.0.0.1:8501/healthz
+curl -s http://127.0.0.1:8501/api/metrics | python3 -m json.tool | head -40
+```
+
+Measured live isolated run: Bronze 2,616 → Silver 2,415 (201 duplicates,
+quarantine 0), Gold 96 rows, 863 orders, revenue 219,392.90; Gold version
+`0 → 19` across 20 refreshes; `numRowsDroppedByWatermark = 0`. Evidence in
+`docs/assets/dashboard_live_*`. Full contract and limits: `docs/DASHBOARD.md`.
+
 ## 6. Inspect the lakehouse
 
 ```bash
@@ -158,10 +202,17 @@ python3 tests/test_producer_logic.py     # 5/5 pass
 | Silver has **fewer** rows than Bronze's distinct keys | the watermark is **shorter** than the producer's maximum lateness, so Spark *drops* valid late events (append dedup) | set `WATERMARK` above max lateness (now `20 minutes` > the 15-min delay); diagnose with `scripts/watermark_report.py` |
 | Silver has rows that look duplicated after a late duplicate | watermark window vs producer's 2-15 min delay | expected within the window; see the late-data analysis in `CONCEPTS_AND_DESIGN_DECISIONS.md` |
 | Streaming job stops before draining the topic | idle supervisor saw a constant per-batch row count (pre-fix) | fixed: `_total_input_rows()` is now monotonic/cumulative |
+| Dashboard says **Waiting for data** | Silver/Gold not created yet, or refresher not started | start `stream_ingestion.py`; then `docker-compose --profile dashboard up -d gold-refresh dashboard`; check `docker logs p2-gold-refresh-1` |
+| Dashboard says **Stale snapshot** | refresher stopped or snapshot older than the threshold | restart `gold-refresh`; check its logs; verify `lakehouse/dashboard/metrics.json` mtime |
+| Dashboard healthy but KPIs empty | `METRICS_PATH` mismatch between refresher and server | both default to `/lakehouse/dashboard/metrics.json`; don't override one side only |
+| Port 8501 already in use | an old dashboard container or host process | `docker ps`; stop it or change the Compose port mapping |
+| `--metrics-only` fails with *Gold table not found* | Gold has not been built yet | run `gold_compaction.py` first, or omit `--metrics-only` |
+| Dashboard cannot write `metrics.json` | host `./lakehouse` permissions | ensure the Spark container can write the bind mount |
 
 ## Doc-Sync
 
 Whenever code, schema, ports, or measured results change, update in the same change:
 `README.md`, `docs/ARCHITECTURE.md`, `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`,
-`docs/RUNBOOK.md`, `docs/index.html`, and the source-of-truth `PROJECT_MEMORY.md`
+`docs/DASHBOARD.md`, `docs/RUNBOOK.md`, `docs/CLOUD_DEMO.md`, `docs/index.html`,
+`CHANGELOG.md`, and the source-of-truth `PROJECT_MEMORY.md`
 (Measured Results + Doc Sync Checklist).

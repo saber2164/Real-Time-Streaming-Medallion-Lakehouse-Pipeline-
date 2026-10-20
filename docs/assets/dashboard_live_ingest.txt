@@ -1,0 +1,15 @@
+Live streaming ingestion progress (real docker logs)
+Captured: 2026-10-20T16:08:26Z
+
+2026-10-20 16:06:13,131 INFO stream_ingestion: PROGRESS bronze_order_events: inputRows=79 inputRowsPerSecond=39.5 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=2017
+2026-10-20 16:06:13,136 INFO stream_ingestion: PROGRESS silver_order_events: inputRows=81 inputRowsPerSecond=40.47976011994003 numRowsDroppedByWatermark=None stateOperators=1 batchDurationMs=1989
+2026-10-20 16:06:13,136 INFO stream_ingestion: STATE dedupe: numRowsTotal=783 numUpdatedRows=None numRowsRemoved=0 numRowsDroppedByWatermark=0
+2026-10-20 16:06:13,141 INFO stream_ingestion: PROGRESS silver_quarantine: inputRows=81 inputRowsPerSecond=40.5 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=1597
+2026-10-20 16:06:43,181 INFO stream_ingestion: PROGRESS bronze_order_events: inputRows=81 inputRowsPerSecond=40.41916167664671 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=1593
+2026-10-20 16:06:43,185 INFO stream_ingestion: PROGRESS silver_order_events: inputRows=80 inputRowsPerSecond=39.960039960039964 numRowsDroppedByWatermark=None stateOperators=1 batchDurationMs=1711
+2026-10-20 16:06:43,185 INFO stream_ingestion: STATE dedupe: numRowsTotal=1875 numUpdatedRows=None numRowsRemoved=0 numRowsDroppedByWatermark=0
+2026-10-20 16:06:43,187 INFO stream_ingestion: PROGRESS silver_quarantine: inputRows=80 inputRowsPerSecond=39.9400898652022 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=1740
+2026-10-20 16:07:13,221 INFO stream_ingestion: PROGRESS bronze_order_events: inputRows=0 inputRowsPerSecond=0.0 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=None
+2026-10-20 16:07:13,222 INFO stream_ingestion: PROGRESS silver_order_events: inputRows=0 inputRowsPerSecond=0.0 numRowsDroppedByWatermark=None stateOperators=1 batchDurationMs=None
+2026-10-20 16:07:13,222 INFO stream_ingestion: STATE dedupe: numRowsTotal=2415 numUpdatedRows=None numRowsRemoved=0 numRowsDroppedByWatermark=0
+2026-10-20 16:07:13,222 INFO stream_ingestion: PROGRESS silver_quarantine: inputRows=0 inputRowsPerSecond=0.0 numRowsDroppedByWatermark=None stateOperators=0 batchDurationMs=None

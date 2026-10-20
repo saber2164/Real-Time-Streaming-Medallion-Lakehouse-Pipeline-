@@ -33,11 +33,12 @@ the implementation-level architecture reference and must stay in sync with the c
 │   /lakehouse/silver/order_events          (["event_id","event_time"])        │
 │                       unparseable → /lakehouse/silver/_quarantine           │
 └──────────────┬──────────────────────────────────────────────────────────────┘
-               │ batch read
+               │ batch read (batch) / every 10 s (live)
                ▼
-┌─────────────────────────────┐
-│  Gold batch job (PySpark)   │        filter order_created → hour×seller×payment
-│  spark/gold_compaction.py   │        → OPTIMIZE ZORDER BY (seller_id)
+┌─────────────────────────────┐        filter order_created → hour×seller×payment
+│  Gold (PySpark)             │        gold_logic.py shared by both paths
+│  gold_compaction.py         │        → OPTIMIZE ZORDER BY (seller_id)
+│  gold_refresh.py            │        → atomic metrics.json → dashboard :8501
 │  /lakehouse/gold/hourly_sales│
 └─────────────────────────────┘
 ```
@@ -157,6 +158,40 @@ producer delay, a **live** run (stream first) dropped ~137 valid orders: Bronze
 5. Logs active-file count/size before vs after (from `DESCRIBE DETAIL`) and
    `DESCRIBE HISTORY` operation metrics as evidence.
 
+## 5.1 Live dashboard (serving layer)
+
+The dashboard is a separate serving path, not part of the streaming DAG:
+
+```
+SILVER ──(every 10 s)──► spark/gold_refresh.py ──► GOLD (overwrite)
+                                      │
+                                      └──► /lakehouse/dashboard/metrics.json (atomic replace)
+                                                     │ read-only mount
+                                                     ▼
+                                      dashboard/server.py (stdlib HTTP :8501)
+                                                     │ GET /api/metrics (3 s poll)
+                                                     ▼
+                                                   browser
+```
+
+- `spark/gold_logic.py` is the **single** Gold transformation, shared by
+  `gold_compaction.py` (batch) and `gold_refresh.py` (live). Revenue is
+  `sum(price)` over `order_created` only, at grain
+  `(hour_start, seller_id, payment_type)`.
+- `gold_refresh.py` writes a temp JSON file and `os.replace`s it, so the web
+  server never sees a partial snapshot. `--once --metrics-only` reads the
+  existing Gold table and writes only metrics, preserving `OPTIMIZE`/ZORDER.
+- `dashboard/server.py` has no Spark/Delta/database dependency and no
+  third-party Python packages. Endpoints: `GET /`, `GET /api/metrics`,
+  `GET /healthz`. It serves the last snapshot only.
+- The `dashboard` container mounts `./lakehouse` **read-only** and binds
+  `127.0.0.1:8501`; the `gold-refresh` service uses the `dashboard` Compose
+  profile. Default `docker-compose up -d` does not start either service.
+- If Silver/Gold is missing, the refresher writes an explicit `waiting`
+  payload; the UI shows a waiting state and never sample data.
+
+Full contract, verified numbers and limits: [`DASHBOARD.md`](DASHBOARD.md).
+
 ## 6. Ports and endpoints
 
 | Endpoint | Address | Used by |
@@ -165,6 +200,7 @@ producer delay, a **live** run (stream first) dropped ~137 valid orders: Bronze
 | Kafka external | `localhost:19092` | host-side `rpk` |
 | Redpanda Console | http://localhost:8080 | humans |
 | Spark UI | http://localhost:4040 | humans (streaming metrics) |
+| Dashboard | http://127.0.0.1:8501 | humans (read-only Gold snapshot) |
 
 ## 7. Container topology (`docker-compose.yml`)
 
@@ -175,9 +211,13 @@ producer delay, a **live** run (stream first) dropped ~137 valid orders: Bronze
 | `topic-init` | redpanda image | one-shot: create-and-verify topic `order-events` (idempotent), exits 0 |
 | `spark` | build `Dockerfile.spark` (pyspark 3.5.3 + delta-spark 3.2.0, JDK 21) | runs ingestion + gold + tests; mounts `./lakehouse`, `./checkpoints`, `./spark`, `./scripts`, `./tests`, `./.ivy2` |
 | `producer` | build `./producer` (confluent-kafka) | optional profile; synthetic load |
+| `gold-refresh` | `spark` image | profile `dashboard`; continuous Gold recompute + `metrics.json` |
+| `dashboard` | build `./dashboard` (python:3.11-slim) | profile `dashboard`; read-only HTTP/JSON serving on `127.0.0.1:8501` |
 
 `spark` and `producer` use `depends_on` with `service_healthy` (redpanda) and
-`service_completed_successfully` (topic-init). No secrets are stored anywhere in the stack.
+`service_completed_successfully` (topic-init). `gold-refresh` starts before
+`dashboard`; both mount `./lakehouse` and are restartable. No secrets are stored
+anywhere in the stack.
 
 ## 8. Repository map
 
@@ -193,16 +233,26 @@ producer delay, a **live** run (stream first) dropped ~137 valid orders: Bronze
 ├── spark/
 │   ├── config.py               # paths, topic, watermark, dedup keys, trigger
 │   ├── stream_ingestion.py     # Bronze + Silver streaming queries
-│   └── gold_compaction.py      # Gold aggregate + OPTIMIZE/ZORDER
+│   ├── gold_logic.py           # shared Gold aggregation/write logic
+│   ├── gold_compaction.py      # Gold aggregate + OPTIMIZE/ZORDER
+│   └── gold_refresh.py         # continuous/one-shot Gold + metrics.json
+├── dashboard/
+│   ├── server.py               # stdlib read-only HTTP server
+│   ├── index.html              # self-contained UI + SVG charts
+│   └── Dockerfile              # python:3.11-slim, no dependencies
 ├── tests/
 │   ├── test_producer_logic.py  # unit tests (dup/late ratios, schema)
 │   ├── verify_silver_dedup.py  # zero duplicate event_id
 │   ├── verify_bronze_offsets.py# contiguous offsets per partition
 │   ├── verify_gold.py          # Gold == independent recompute from Silver
+│   ├── verify_dashboard_metrics.py # metrics contract + accounting identity
 │   └── verify_recovery.sh      # ungraceful crash → restart → assertions
 ├── scripts/
-│   └── inspect_delta.py        # rows, active/physical files, schema, history
-├── docs/                       # this file, concepts, runbook, web page, assets
+│   ├── inspect_delta.py        # rows, active/physical files, schema, history
+│   ├── watermark_report.py     # 10m vs 20m late-event loss evidence
+│   ├── live_dashboard.sh       # full live demo
+│   └── stop_live_dashboard.sh  # stop the live demo
+├── docs/                       # architecture, concepts, dashboard, runbook, web page, assets
 ├── PROJECT_MEMORY.md           # agent memory: status, decisions, measured results
 ├── CHANGELOG.md
 ├── README.md

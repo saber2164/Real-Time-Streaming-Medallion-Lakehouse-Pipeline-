@@ -236,6 +236,36 @@ Silver rows → **1055** `order_created` → 60 Gold groups.)
 
 **Example.** `(2026-10-18 12:00, seller_007, credit_card) → count=3, revenue=412.50`.
 
+### 1.12 Serving layer: precomputed snapshots vs. querying Delta from the browser
+
+**What.** A **serving layer** turns the Gold table into a small, read-optimized artifact for a
+UI. Here `spark/gold_refresh.py` recomputes Gold from Silver every 10 seconds and atomically
+writes `metrics.json`; `dashboard/server.py` serves that JSON; the browser polls it every 3
+seconds. The dashboard is a **materialized view**, not a query engine.
+
+**Why not query Delta directly from the dashboard?**
+- **No Spark in the web tier.** A browser request would otherwise need a JVM/Spark session
+  (seconds to start, hundreds of MB) or a second query engine.
+- **Read amplification.** Every tab and every refresh would rescan Delta and repeat the same
+  aggregation; the snapshot is computed once per cycle and shared.
+- **Coupling and security.** The web process would need table paths and write credentials; the
+  current server mounts the lakehouse **read-only** and has no Delta client at all.
+- **Contention.** Ad-hoc scans compete with streaming writers for I/O and cluster resources.
+- **Contract drift.** Reimplementing revenue SQL in JavaScript makes the UI disagree with Gold;
+  here `spark/gold_logic.py` is shared by batch and live paths.
+
+**Pull vs. push.** Polling is a deliberate choice: 3-second HTTP polling is trivial to operate,
+survives reconnects, and is plenty for a stakeholder view. SSE/WebSocket would cut latency but
+add connection management and fan-out; that is the upgrade path, not the starting point.
+
+**Atomicity.** `gold_refresh.py` writes a temp file then `os.replace`s it. The server can only
+ever read a complete snapshot, never a half-written JSON document. The UI also keeps the last
+good snapshot visible while a fetch is in flight.
+
+**Trade-off.** Staleness = refresh cadence + query time (≈10 s here). At much larger Silver
+tables, the full recompute becomes the bottleneck; the production upgrade is an incremental
+`MERGE`/`foreachBatch` materialization with the same JSON contract.
+
 ---
 
 ## Part 2 — Alternatives and "why not"
@@ -402,6 +432,10 @@ This is a **single-node, local, demonstration** build. To productionise:
 - **Backfill strategy:** since Bronze is immutable and replayable, backfill Silver/Gold by
   replaying Bronze from a chosen version (`startingVersion`) — productionise as a rebuild job.
 - **Cost tracking:** bytes scanned/written, cluster-hours, storage growth.
+- **Serving layer:** the dashboard is localhost-only, read-only and unauthenticated. Production
+  needs TLS + authn/authz, an incremental Gold materialization (skip the write when Silver is
+  unchanged), SSE/WebSocket push, snapshot retention/TTL, and alerting on stale snapshots. The
+  JSON contract and shared `gold_logic.py` are designed to survive that upgrade.
 - **Orchestration:** Airflow/Dagster DAG with retries, SLAs, and lineage for the Gold refresh.
 - **True exactly-once framing:** document the producer's at-least-once contract and keep the
   dedup layer; if the producer can be made transactional, revisit.
@@ -505,3 +539,31 @@ managed deployment I'd happily use Kafka (MSK/Confluent) instead.
 **Q19. How do you know the Bronze layer is complete (no missing offsets)?**
 `verify_bronze_offsets.py` asserts, per partition, `max(offset) − min(offset) + 1 = count(*)`
 and `count(*) = count(distinct offset)`. Measured: p0 1056, p1 1170, p2 1051 = 3277.
+
+**Q20. Why doesn't the live dashboard query Delta directly?**
+Because the browser should not own a Spark session, table paths or credentials, and every tab
+would repeat the same scan. `gold_refresh.py` computes the aggregate once per 10-second cycle
+and publishes an atomic JSON snapshot; `dashboard/server.py` is a dependency-free read-only
+server. The UI is a materialized view, not a query engine.
+
+**Q21. How do you know the dashboard numbers are correct?**
+Three independent checks: (1) `gold_logic.py` is shared with the batch Gold job, so the SQL
+cannot drift; (2) the dashboard contract test asserts the accounting identity
+`bronze_rows = silver_rows + duplicates_removed + quarantine_rows` and that payment/hour
+breakdowns sum to the KPIs; (3) a live isolated run was verified with `verify_silver_dedup.py`
+(Silver 2,415 = 2,415 distinct keys, 0 bad amounts) and `verify_gold.py` (96 Gold rows,
+orders 863 = 863, revenue 219,392.90 = 219,392.90, 0 mismatched groups). The browser DOM also
+showed status **Live** with 10 seller bars, 2 hourly bars and no console errors.
+
+**Q22. What breaks first if you recompute Gold every 10 seconds?**
+Delta version/file churn and scan cost. Each `overwrite` creates a new Gold version (the live
+test reached version 19 in 20 cycles), and a full recompute is O(Silver). At this scale it is
+fine; at production scale, skip the write when Silver's version is unchanged, use an
+incremental `MERGE`/`foreachBatch`, and keep `OPTIMIZE`/ZORDER in a scheduled job rather than
+the loop.
+
+**Q23. Why does CI use `--once --metrics-only` instead of the normal refresh?**
+`gold_compaction.py` runs `OPTIMIZE … ZORDER BY (seller_id)` last. A normal `gold_refresh.py
+--once` would overwrite Gold and undo that compaction; `--metrics-only` reads the existing Gold
+table and writes only `metrics.json`, preserving the compacted files and Gold version. CI then
+starts the dashboard and asserts the API contract against the real snapshot.

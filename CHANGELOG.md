@@ -8,8 +8,26 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 ## [Unreleased]
 
 ### Added
+- **Live stakeholder dashboard** on `http://localhost:8501`: KPI cards, events/min,
+  payment-mix donut, top-10 sellers, revenue by hour, and a pipeline-health strip;
+  3-second polling, light/dark theme, explicit waiting/stale states, no sample data.
+- `dashboard/server.py` (stdlib-only read-only HTTP server: `/`, `/api/metrics`,
+  `/healthz`), `dashboard/index.html` (self-contained UI + inline SVG charts), and
+  `dashboard/Dockerfile` (no third-party Python packages).
+- `spark/gold_refresh.py`: continuous/one-shot Gold refresher and atomic
+  `metrics.json` exporter. `--once --metrics-only` reads the existing Gold table
+  without rewriting it (preserves `OPTIMIZE`/ZORDER for CI).
+- `spark/gold_logic.py`: shared Gold aggregation so `gold_compaction.py` and
+  `gold_refresh.py` cannot drift.
+- `scripts/live_dashboard.sh` / `scripts/stop_live_dashboard.sh`: one-command live demo.
+- `tests/verify_dashboard_metrics.py`: metrics contract + accounting identity
+  (`bronze = silver + duplicates + quarantine`) and chart-shape checks.
+- `docs/DASHBOARD.md`: architecture, JSON contract, verified live run, limits, troubleshooting.
+- Compose services `gold-refresh` and `dashboard` under the `dashboard` profile;
+  dashboard binds `127.0.0.1:8501` and mounts `./lakehouse` read-only.
 - `.github/workflows/demo-run.yml`: free, on-demand cloud execution of the full
   pipeline on GitHub Actions (`workflow_dispatch`), with evidence artifacts.
+  It now also generates a read-only dashboard snapshot and verifies `/api/metrics`.
 - `docs/CLOUD_DEMO.md`: how the cloud trigger works, reproducibility, and the
   optional one-click upgrade path.
 - `STREAM_MAX_SECONDS` + `STREAM_IDLE_TIMEOUT_SECONDS` in `spark/config.py` and
@@ -18,8 +36,9 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
   the max is only a safety backstop.
 - `docs/ARCHITECTURE.md`: layered architecture, data contracts, Bronze/Silver/Gold
   grain, streaming topology, recovery model.
-- `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 19 design
-  Q&A (watermarks, dedup, read-from-Delta, Gold overwrite, Z-order, recovery).
+- `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 23 design
+  Q&A (watermarks, dedup, read-from-Delta, Gold overwrite, Z-order, recovery,
+  serving layer/dashboard).
 - `docs/RUNBOOK.md`: bring-up, measured run order, verification, teardown, troubleshooting.
 - `docs/index.html`: self-contained showcase page (light/dark, inline SVG, OpenGraph).
 - `LICENSE` (MIT).
@@ -32,7 +51,7 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - `producer/event_producer.py` + `tests/test_producer_logic.py`: synthetic events
   with ~10% duplicates and ~10% delayed events, unit-tested.
 - `tests/verify_silver_dedup.py`, `tests/verify_bronze_offsets.py`, `tests/verify_gold.py`,
-  `tests/verify_recovery.sh`; `scripts/inspect_delta.py`.
+  `tests/verify_dashboard_metrics.py`, `tests/verify_recovery.sh`; `scripts/inspect_delta.py`.
 - `docs/assets/` raw evidence (verify outputs, inspect_delta, gold run, recovery run).
 - `console.yaml` (Redpanda Console config).
 - `docker-compose.yml` + `Dockerfile.spark`: Redpanda, Console, topic-init, Spark, producer (profile).
@@ -42,6 +61,11 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 - Quarantine path moved to a sibling of the Silver table (`/lakehouse/silver/_quarantine`).
 - Console pinned to `redpandadata/console:v2.8.4`.
 - Producer Dockerfile copies `requirements.txt` before `pip install` (context is `./producer`).
+- Gold aggregation extracted into `spark/gold_logic.py` and shared by batch and live paths.
+- Dashboard/refresher are opt-in (`--profile dashboard`); a plain
+  `docker-compose up -d` still starts only the original stack.
+- CI generates dashboard metrics **after** compaction with `--metrics-only`, so
+  the metrics step cannot undo `OPTIMIZE`/ZORDER or bump the Gold version.
 
 ### Fixed
 - **Lost valid late events (data loss).** A 10-minute watermark was **shorter** than
@@ -73,6 +97,8 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 
 ### Security
 - No secrets are committed; `.gitignore` excludes `lakehouse/`, `checkpoints/`, `*.parquet`, `.env`.
+- Dashboard serves read-only data, mounts `./lakehouse` read-only, and binds
+  `127.0.0.1:8501` (not exposed on the LAN). No CDN or third-party JS.
 
 ## [1.0.0] - 2026-10-18
 

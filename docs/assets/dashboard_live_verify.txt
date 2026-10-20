@@ -1,0 +1,73 @@
+Live isolated dashboard run — independent verification
+Topic: order-events-dashboard
+Paths: /lakehouse/dashboard-demo/*
+Captured: 2026-10-20T16:07:56Z
+
+=== verify_silver_dedup.py ===
+time="2026-10-20T21:37:56+05:30" level=warning msg="Found orphan containers (p2-producer-demo, p2-ingest-demo, stream-ingest) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container p2-spark-run-3bccedd7de17 Creating 
+ Container p2-spark-run-3bccedd7de17 Created 
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-94ff7887-cf12-455b-acec-8ac4c3f69be8;1.0
+	confs: [default]
+	found io.delta#delta-spark_2.12;3.2.0 in central
+	found io.delta#delta-storage;3.2.0 in central
+	found org.antlr#antlr4-runtime;4.9.3 in central
+:: resolution report :: resolve 70ms :: artifacts dl 4ms
+	:: modules in use:
+	io.delta#delta-spark_2.12;3.2.0 from central in [default]
+	io.delta#delta-storage;3.2.0 from central in [default]
+	org.antlr#antlr4-runtime;4.9.3 from central in [default]
+	---------------------------------------------------------------------
+	|                  |            modules            ||   artifacts   |
+	|       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+	---------------------------------------------------------------------
+	|      default     |   3   |   0   |   0   |   0   ||   3   |   0   |
+	---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-94ff7887-cf12-455b-acec-8ac4c3f69be8
+	confs: [default]
+	0 artifacts copied, 3 already retrieved (0kB/3ms)
+Silver rows                 : 2415
+Distinct event_id           : 2415
+Distinct (event_id, time)   : 2415
+Bronze distinct dedup keys  : 2415
+Rows with bad total_amount  : 0
+PASS verify_silver_dedup: zero duplicate event_id; total_amount correct
+
+=== verify_gold.py ===
+time="2026-10-20T21:38:05+05:30" level=warning msg="Found orphan containers (p2-producer-demo, p2-ingest-demo, stream-ingest) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container p2-spark-run-a21afc7b6163 Creating 
+ Container p2-spark-run-a21afc7b6163 Created 
+:: loading settings :: url = jar:file:/usr/local/lib/python3.9/site-packages/pyspark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-0cbfe206-eae1-4f9d-8979-db9262fa152e;1.0
+	confs: [default]
+	found io.delta#delta-spark_2.12;3.2.0 in central
+	found io.delta#delta-storage;3.2.0 in central
+	found org.antlr#antlr4-runtime;4.9.3 in central
+:: resolution report :: resolve 64ms :: artifacts dl 3ms
+	:: modules in use:
+	io.delta#delta-spark_2.12;3.2.0 from central in [default]
+	io.delta#delta-storage;3.2.0 from central in [default]
+	org.antlr#antlr4-runtime;4.9.3 from central in [default]
+	---------------------------------------------------------------------
+	|                  |            modules            ||   artifacts   |
+	|       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+	---------------------------------------------------------------------
+	|      default     |   3   |   0   |   0   |   0   ||   3   |   0   |
+	---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-0cbfe206-eae1-4f9d-8979-db9262fa152e
+	confs: [default]
+	0 artifacts copied, 3 already retrieved (0kB/2ms)
+[verify_gold] independent groups = 96
+[verify_gold] gold rows          = 96
+[verify_gold] duplicate grain keys = 0
+[verify_gold] order_count  gold=863 independent=863
+[verify_gold] total_revenue gold=219392.9 independent=219392.9
+[verify_gold] mismatched groups = 0
+[verify_gold] PASS: gold matches independent recomputation from silver

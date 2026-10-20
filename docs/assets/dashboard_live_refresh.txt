@@ -1,0 +1,25 @@
+Live Gold refresher cycles (real docker logs)
+Captured: 2026-10-20T16:08:26Z
+
+2026-10-20 16:05:40,092 INFO gold_refresh: Waiting for the Silver table at /lakehouse/dashboard-demo/silver/order_events. Start the streaming ingestion job.
+2026-10-20 16:05:45,097 INFO gold_refresh: Silver table found at /lakehouse/dashboard-demo/silver/order_events
+2026-10-20 16:05:54,454 INFO gold_refresh: REFRESH 9.4s gold_rows=0 silver=0 bronze=47 revenue=0.00 orders=0 version=0 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:04,582 INFO gold_refresh: REFRESH 5.1s gold_rows=51 silver=337 bronze=526 revenue=25561.66 orders=107 version=1 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:14,978 INFO gold_refresh: REFRESH 5.4s gold_rows=60 silver=708 bronze=926 revenue=56345.40 orders=238 version=2 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:25,073 INFO gold_refresh: REFRESH 5.1s gold_rows=60 silver=1072 bronze=1326 revenue=92775.40 orders=383 version=3 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:35,211 INFO gold_refresh: REFRESH 5.1s gold_rows=60 silver=1438 bronze=1726 revenue=128841.28 orders=519 version=4 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:45,599 INFO gold_refresh: REFRESH 5.4s gold_rows=60 silver=1803 bronze=2127 revenue=163464.57 orders=658 version=5 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:06:53,872 INFO gold_refresh: REFRESH 3.3s gold_rows=60 silver=2180 bronze=2616 revenue=197629.21 orders=786 version=6 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:00,942 INFO gold_refresh: REFRESH 2.1s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=7 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:07,444 INFO gold_refresh: REFRESH 1.5s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=8 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:14,004 INFO gold_refresh: REFRESH 1.6s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=9 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:21,408 INFO gold_refresh: REFRESH 2.4s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=10 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:28,074 INFO gold_refresh: REFRESH 1.7s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=11 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:35,028 INFO gold_refresh: REFRESH 2.0s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=12 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:41,646 INFO gold_refresh: REFRESH 1.6s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=13 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:48,218 INFO gold_refresh: REFRESH 1.6s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=14 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:07:55,000 INFO gold_refresh: REFRESH 1.8s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=15 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:08:02,968 INFO gold_refresh: REFRESH 3.0s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=16 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:08:10,787 INFO gold_refresh: REFRESH 2.8s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=17 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:08:17,592 INFO gold_refresh: REFRESH 1.8s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=18 -> /lakehouse/dashboard-demo/metrics.json
+2026-10-20 16:08:24,146 INFO gold_refresh: REFRESH 1.6s gold_rows=96 silver=2415 bronze=2616 revenue=219392.90 orders=863 version=19 -> /lakehouse/dashboard-demo/metrics.json
