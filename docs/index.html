@@ -1,487 +1,596 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="night">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Real-Time Streaming & Medallion Lakehouse Pipeline — Redpanda · Spark · Delta Lake</title>
-<meta name="description" content="A 100% local Medallion lakehouse: Redpanda (Kafka) → PySpark Structured Streaming → Delta Lake, with event-time watermark dedup, checkpoint recovery, OPTIMIZE/Z-ORDER compaction, and a live read-only dashboard. Real measured results." />
+<title>Real-Time Streaming &amp; Medallion Lakehouse — Control Room</title>
+<meta name="description" content="Redpanda → PySpark Structured Streaming → Delta Lake. Event-time watermark dedup, checkpointed recovery, OPTIMIZE/Z-ORDER compaction and a live dashboard. Every number measured, not modelled." />
 <meta name="author" content="Harshit Thakkar" />
-<meta name="color-scheme" content="light dark" />
+<meta name="color-scheme" content="dark light" />
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Real-Time Streaming & Medallion Lakehouse Pipeline" />
-<meta property="og:description" content="Redpanda + PySpark Structured Streaming + Delta Lake. Watermark dedup (3277→3018 rows), checkpoint recovery, and OPTIMIZE (Bronze 3→1, Silver 4→1 active files). All numbers measured." />
+<meta property="og:title" content="Real-Time Streaming &amp; Medallion Lakehouse Pipeline" />
+<meta property="og:description" content="Redpanda + PySpark Structured Streaming + Delta Lake. Watermark dedup (3277→3018 rows), checkpoint recovery, OPTIMIZE compaction and a live dashboard. All numbers measured." />
 <meta property="og:site_name" content="Medallion Lakehouse Pipeline" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Real-Time Streaming & Medallion Lakehouse Pipeline" />
-<meta name="twitter:description" content="Redpanda + PySpark Structured Streaming + Delta Lake, with real measured results." />
-<style>
-  :root {
-    --bg: #f7f8fa; --surface: #ffffff; --surface-2: #eef1f5;
-    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
-    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
-    --code-bg: #0f141b; --code-text: #e8edf3;
-    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
-    --radius: 14px; --maxw: 1080px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
-      --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
-      --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
-      --code-bg: #05080c; --code-text: #e8edf3;
-      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
-    }
-  }
-  :root[data-theme="light"] {
-    --bg: #f7f8fa; --surface: #ffffff; --surface-2: #eef1f5;
-    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
-    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
-    --code-bg: #0f141b; --code-text: #e8edf3; --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
-  }
-  :root[data-theme="dark"] {
-    --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
-    --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
-    --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
-    --code-bg: #05080c; --code-text: #e8edf3; --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--accent-2); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px; }
-  header.hero {
-    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface) 60%);
-    border-bottom: 1px solid var(--border);
-    padding: 56px 0 44px;
-  }
-  .hero h1 { font-size: clamp(1.7rem, 4.2vw, 2.7rem); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.02em; }
-  .hero .pitch { font-size: clamp(1rem, 2.2vw, 1.22rem); color: var(--muted); max-width: 60ch; margin: 0 0 22px; }
-  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-  .badge {
-    font-size: .78rem; font-weight: 600; padding: 4px 11px; border-radius: 999px;
-    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-  }
-  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
-  .btn {
-    display: inline-block; padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: .95rem;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
-  }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn.primary:hover { filter: brightness(1.06); }
-  .btn:hover { text-decoration: none; }
-  main { padding: 8px 0 60px; }
-  section { padding: 34px 0; border-bottom: 1px solid var(--border); }
-  section:last-child { border-bottom: 0; }
-  h2 { font-size: 1.5rem; letter-spacing: -.01em; margin: 0 0 6px; }
-  h2 .num { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 8px; }
-  .lead { color: var(--muted); margin: 0 0 18px; max-width: 72ch; }
-  h3 { font-size: 1.06rem; margin: 22px 0 8px; }
-  p { max-width: 74ch; }
-  pre {
-    background: var(--code-bg); color: var(--code-text); border-radius: 12px; padding: 16px 18px;
-    overflow-x: auto; font-size: .86rem; line-height: 1.55; border: 1px solid var(--border);
-  }
-  code { font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  p code, li code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; font-size: .88em; }
-  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); overflow-x: auto; }
-  .diagram svg { display: block; width: 100%; height: auto; min-width: 720px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
-  .card h3 { margin-top: 0; }
-  .card p { color: var(--muted); font-size: .92rem; margin: 6px 0 0; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 8px; }
-  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-  .kpi .v { font-size: clamp(1.3rem, 3vw, 1.8rem); font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .kpi .v .u { font-size: .8rem; color: var(--muted); font-weight: 500; }
-  .kpi .l { font-size: .82rem; color: var(--muted); margin-top: 2px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .92rem; }
-  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .layer-pill { display:inline-block; width:.62rem; height:.62rem; border-radius:50%; margin-right:7px; vertical-align: middle; }
-  .b { background: var(--accent-2);} .s { background: var(--accent-3);} .g { background: var(--accent);}
-  .note { font-size: .86rem; color: var(--muted); background: var(--surface-2); border-left: 3px solid var(--accent-2); padding: 10px 14px; border-radius: 8px; }
-  .bars { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
-  .bar-row { display: grid; grid-template-columns: 7.5rem 1fr 5.5rem; align-items: center; gap: 10px; margin: 8px 0; }
-  .bar-label { font-size: .84rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar-track { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 999px; background: var(--accent-2); }
-  .bar-value { font-size: .82rem; text-align: right; font-variant-numeric: tabular-nums; }
-  .tag { display:inline-block; font-size:.75rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
-         color: var(--accent-3); border:1px solid color-mix(in srgb, var(--accent-3) 45%, var(--border));
-         background: color-mix(in srgb, var(--accent-3) 12%, var(--surface)); border-radius:999px; padding:2px 9px; }
-  footer { padding: 28px 0 50px; color: var(--muted); font-size: .88rem; }
-  .toggle {
-    position: fixed; top: 14px; right: 14px; z-index: 20; cursor: pointer;
-    background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-radius: 10px; padding: 8px 12px; font-size: .82rem; font-weight: 600; box-shadow: var(--shadow);
-  }
-  .skip { position:absolute; left:-999px; } .skip:focus { left: 12px; top: 12px; background: var(--surface); padding: 8px 12px; border-radius: 8px; z-index: 30; }
-  @media (max-width: 620px) { header.hero { padding: 44px 0 34px; } section { padding: 26px 0; } }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-</style>
+<meta name="twitter:title" content="Real-Time Streaming &amp; Medallion Lakehouse Pipeline" />
+<meta name="twitter:description" content="Redpanda + PySpark Structured Streaming + Delta Lake. Watermark dedup, checkpoint recovery, OPTIMIZE and a live dashboard. All numbers measured." />
+<link rel="preload" href="assets/fonts/bricolage-grotesque-400_800.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="assets/fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="assets/fonts/fonts.css" />
+<link rel="stylesheet" href="assets/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0e13'/%3E%3Cpath d='M7 22V10h4l5 8v-8h4v12h-4l-5-8v8z' fill='%23f2a93b'/%3E%3C/svg%3E" />
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<button class="toggle" id="themeToggle" aria-label="Toggle colour theme">◐ Theme</button>
 
-<header class="hero">
-  <div class="wrap">
-    <div class="badges" aria-label="Technology stack">
-      <span class="badge">Redpanda v24.3.10</span>
-      <span class="badge">PySpark 3.5.3</span>
-      <span class="badge">Delta Lake 3.2.0</span>
-      <span class="badge">Structured Streaming</span>
-      <span class="badge">Docker Compose</span>
-      <span class="badge">MIT</span>
-    </div>
-    <h1>Real-Time Streaming &amp; Medallion Lakehouse Pipeline</h1>
-    <p class="pitch">A 100% local lakehouse that ingests live e-commerce order events from
-      <strong>Redpanda</strong>, cleanses and <strong>deduplicates</strong> them with event-time
-      <strong>watermarks</strong> in <strong>PySpark Structured Streaming</strong>, and lands
-      Bronze → Silver → Gold <strong>Delta Lake</strong> tables — with checkpointed fault
-      tolerance and <strong>OPTIMIZE</strong>/Z-ORDER compaction. Every number below was measured.</p>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">View on GitHub</a>
-      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Run it in the cloud (free)</a>
-      <a class="btn" href="#results">See measured results</a>
-      <a class="btn" href="#dashboard">Live dashboard</a>
-      <a class="btn" href="CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
-    </div>
+<!-- ================================================================ topbar -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="index.html"><b>P2</b> <span>/</span> MEDALLION LAKEHOUSE</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" aria-current="page">Overview</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="ARCHITECTURE.md">Architecture</a>
+      <a href="RUNBOOK.md">Runbook</a>
+      <a href="CLOUD_DEMO.md">Cloud</a>
+      <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch colour theme">◐ Theme</button>
+    </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main id="main">
 
-  <section id="problem">
-    <h2><span class="num">01</span>The problem</h2>
-    <p class="lead">Raw, event-driven commerce data is messy and out of order: the same event
-      gets retried, events arrive minutes late, and downstream analytics must be correct anyway.</p>
-    <p>We need a pipeline that (1) never loses a record, (2) removes duplicates without unbounded
-      state, (3) copes with late events, (4) survives crashes without double-writing, and
-      (5) keeps the tables fast as they grow. This project implements exactly that shape — and
-      proves each guarantee with a test and a measured number.</p>
-  </section>
+  <!-- ================================================================= hero -->
+  <section class="hero wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow reveal d1">Project 02 · Streaming data platform</p>
+        <h1 class="reveal d2">Real-Time Streaming &amp; <span class="accent">Medallion</span> Lakehouse</h1>
+        <p class="deck reveal d3">
+          A 100% local lakehouse that ingests live e-commerce order events from
+          <strong>Redpanda</strong>, cleanses and <strong>deduplicates</strong> them with
+          event-time <strong>watermarks</strong> in <strong>PySpark Structured Streaming</strong>,
+          and lands Bronze → Silver → Gold <strong>Delta Lake</strong> tables — checkpointed,
+          compacted with <strong>OPTIMIZE</strong>/Z-ORDER, and served to stakeholders
+          through a <strong>live dashboard</strong>. Every number on this page was measured
+          by a real run.
+        </p>
+        <div class="btn-row reveal d4">
+          <a class="btn primary" href="dashboard.html">Open the dashboard <span class="arrow">→</span></a>
+          <a class="btn" href="#results">Measured results <span class="arrow">→</span></a>
+          <a class="btn" href="RUNBOOK.md">Run it locally</a>
+        </div>
 
-  <section id="architecture">
-    <h2><span class="num">02</span>Architecture</h2>
-    <p class="lead">Only the Bronze query consumes Kafka; Silver replays Bronze as a Delta stream,
-      so the broker has a single consumer and Silver can be rebuilt from Bronze.</p>
-    <div class="diagram">
-      <svg viewBox="0 0 980 250" role="img" aria-label="Pipeline diagram: producer to Redpanda to Bronze to Silver to Gold, with a quarantine branch">
-        <defs>
-          <marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
-            <path d="M0,0 L9,4.5 L0,9 z" fill="var(--muted)"/>
-          </marker>
-        </defs>
-        <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
-          <!-- Producer -->
-          <rect x="14" y="95" width="150" height="60" rx="12" fill="var(--surface-2)" stroke="var(--border)"/>
-          <text x="89" y="120" text-anchor="middle" fill="var(--text)" font-weight="700">Producer</text>
-          <text x="89" y="139" text-anchor="middle" fill="var(--muted)" font-size="11">~10% dups · ~10% late</text>
+        <div class="spec-strip reveal d5">
+          <div class="spec"><span class="k">Watermark</span><span class="v">20 minutes</span></div>
+          <div class="spec"><span class="k">Dedup key</span><span class="v">event_id + event_time</span></div>
+          <div class="spec"><span class="k">Gold grain</span><span class="v">hour × seller × pay</span></div>
+          <div class="spec"><span class="k">Console</span><span class="v">:8080</span></div>
+          <div class="spec"><span class="k">Dashboard</span><span class="v">:8501</span></div>
+        </div>
+      </div>
 
-          <!-- Redpanda -->
-          <rect x="196" y="95" width="168" height="60" rx="12" fill="color-mix(in srgb, var(--accent) 16%, var(--surface))" stroke="var(--accent)"/>
-          <text x="280" y="120" text-anchor="middle" fill="var(--text)" font-weight="700">Redpanda</text>
-          <text x="280" y="139" text-anchor="middle" fill="var(--muted)" font-size="11">order-events · 3 partitions</text>
-
-          <!-- Bronze -->
-          <rect x="396" y="95" width="168" height="60" rx="12" fill="color-mix(in srgb, var(--accent-2) 16%, var(--surface))" stroke="var(--accent-2)"/>
-          <text x="480" y="116" text-anchor="middle" fill="var(--text)" font-weight="700">BRONZE</text>
-          <text x="480" y="133" text-anchor="middle" fill="var(--muted)" font-size="11">raw JSON + kafka metadata</text>
-          <text x="480" y="147" text-anchor="middle" fill="var(--muted)" font-size="11">immutable · replayable</text>
-
-          <!-- Silver -->
-          <rect x="596" y="95" width="168" height="60" rx="12" fill="color-mix(in srgb, var(--accent-3) 16%, var(--surface))" stroke="var(--accent-3)"/>
-          <text x="680" y="116" text-anchor="middle" fill="var(--text)" font-weight="700">SILVER</text>
-          <text x="680" y="133" text-anchor="middle" fill="var(--muted)" font-size="11">watermark 20m · dedup</text>
-          <text x="680" y="147" text-anchor="middle" fill="var(--muted)" font-size="11">(event_id, event_time)</text>
-
-          <!-- Gold -->
-          <rect x="796" y="95" width="168" height="60" rx="12" fill="color-mix(in srgb, var(--accent) 16%, var(--surface))" stroke="var(--accent)"/>
-          <text x="880" y="116" text-anchor="middle" fill="var(--text)" font-weight="700">GOLD</text>
-          <text x="880" y="133" text-anchor="middle" fill="var(--muted)" font-size="11">hour · seller · payment</text>
-          <text x="880" y="147" text-anchor="middle" fill="var(--muted)" font-size="11">ZORDER seller_id</text>
-
-          <!-- Quarantine -->
-          <rect x="596" y="14" width="168" height="46" rx="12" fill="var(--surface-2)" stroke="var(--border)" stroke-dasharray="4 3"/>
-          <text x="680" y="35" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">quarantine</text>
-          <text x="680" y="50" text-anchor="middle" fill="var(--muted)" font-size="10.5">unparseable rows</text>
-
-          <!-- arrows -->
-          <line x1="164" y1="125" x2="194" y2="125" stroke="var(--muted)" marker-end="url(#arw)"/>
-          <line x1="364" y1="125" x2="394" y2="125" stroke="var(--muted)" marker-end="url(#arw)"/>
-          <line x1="564" y1="125" x2="594" y2="125" stroke="var(--muted)" marker-end="url(#arw)"/>
-          <line x1="764" y1="125" x2="794" y2="125" stroke="var(--muted)" marker-end="url(#arw)"/>
-          <path d="M660,95 C660,70 660,60 660,60" fill="none" stroke="var(--muted)" marker-end="url(#arw)" stroke-dasharray="4 3"/>
-          <text x="440" y="86" text-anchor="middle" fill="var(--muted)" font-size="10.5">readStream kafka</text>
-          <text x="640" y="86" text-anchor="middle" fill="var(--muted)" font-size="10.5">readStream delta</text>
-          <text x="840" y="86" text-anchor="middle" fill="var(--muted)" font-size="10.5">batch</text>
-        </g>
-      </svg>
+      <!-- the pipeline spine: the signature element of the page -->
+      <figure class="schematic reveal d3" aria-labelledby="schematic-cap">
+        <div class="schematic-head">
+          <span id="schematic-cap">Pipeline spine · measured</span>
+          <span>redpanda → delta</span>
+        </div>
+        <svg viewBox="0 0 560 404" role="img" aria-label="Pipeline spine: producer to Redpanda to Bronze, Silver, Gold and the live dashboard, with measured row counts.">
+            <g>
+              <!-- producer -->
+              <rect class="node-box" x="40" y="10" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="30">Producer</text>
+              <text class="val" x="54" y="45" font-size="10">py · confluent-kafka</text>
+              <text class="lbl" x="306" y="36" text-anchor="end">10% dup · 10% late</text>
+              <path class="wire flow" d="M165 52 L165 66" />
+              <!-- redpanda -->
+              <rect class="node-box" x="40" y="66" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="86">Redpanda</text>
+              <text class="val" x="54" y="101" font-size="10">topic order-events</text>
+              <text class="lbl" x="306" y="92" text-anchor="end">3 partitions</text>
+              <path class="wire flow" d="M165 108 L165 122" />
+              <!-- bronze -->
+              <rect class="node-box" x="40" y="122" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="142">Bronze · delta</text>
+              <text class="val" x="54" y="157" font-size="10">raw + kafka metadata</text>
+              <text class="val hot" x="276" y="150" text-anchor="end">3,277</text>
+              <path class="wire flow" d="M165 164 L165 178" />
+              <!-- silver -->
+              <rect class="node-box silver" x="40" y="178" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="198">Silver · delta</text>
+              <text class="val" x="54" y="213" font-size="10">dedup · quarantine</text>
+              <text class="val" x="276" y="206" text-anchor="end">3,018</text>
+              <text class="lbl" x="306" y="192" text-anchor="end">20 min watermark</text>
+              <text class="lbl" x="306" y="208" text-anchor="end">259 duplicates</text>
+              <path class="wire flow" d="M165 220 L165 234" />
+              <!-- gold -->
+              <rect class="node-box gold" x="40" y="234" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="254">Gold · delta</text>
+              <text class="val" x="54" y="269" font-size="10">hourly_sales</text>
+              <text class="val hot" x="276" y="262" text-anchor="end">60</text>
+              <text class="lbl" x="306" y="248" text-anchor="end">ZORDER seller_id</text>
+              <text class="lbl" x="306" y="264" text-anchor="end">OPTIMIZE 1 file</text>
+              <path class="wire flow" d="M165 276 L165 290" />
+              <!-- dashboard -->
+              <rect class="node-box gold" x="40" y="290" width="250" height="42" rx="3" />
+              <text class="lbl" x="54" y="310">Dashboard</text>
+              <text class="val" x="54" y="325" font-size="10">read-only · stdlib</text>
+              <text class="val hot" x="276" y="318" text-anchor="end">3 s poll</text>
+              <text class="lbl" x="306" y="304" text-anchor="end">$269,805.58</text>
+              <text class="lbl" x="306" y="320" text-anchor="end">1,055 orders</text>
+              <!-- footer note -->
+              <path class="wire" d="M40 352 L540 352" />
+              <text class="lbl" x="40" y="372">rows = measured on the canonical run · 3,277 → 3,018 → 60</text>
+              <text class="lbl" x="540" y="372" text-anchor="end">numRowsDroppedByWatermark = 0</text>
+            </g>
+        </svg>
+      </figure>
     </div>
   </section>
 
-  <section id="layers">
-    <h2><span class="num">03</span>Medallion layers &amp; grain</h2>
-    <table>
-      <thead><tr><th>Layer</th><th>Path</th><th>Purpose</th><th>Grain</th></tr></thead>
-      <tbody>
-        <tr><td><span class="layer-pill b"></span><strong>Bronze</strong></td><td><code>/lakehouse/bronze/order_events</code></td><td>raw JSON + <code>kafka_partition</code>/<code>offset</code>/<code>timestamp</code></td><td>1 row / Kafka record</td></tr>
-        <tr><td><span class="layer-pill s"></span><strong>Silver</strong></td><td><code>/lakehouse/silver/order_events</code></td><td>parsed, typed, deduped; <code>total_amount</code>, <code>event_date</code></td><td>1 row / unique <code>(event_id, event_time)</code></td></tr>
-        <tr><td><span class="layer-pill g"></span><strong>Gold</strong></td><td><code>/lakehouse/gold/hourly_sales</code></td><td>hourly revenue &amp; order count; Z-ordered</td><td>1 row / <code>(hour_start, seller_id, payment_type)</code></td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section id="concerns">
-    <h2><span class="num">04</span>Key engineering concerns</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>Stateful dedup</h3>
-        <p><code>dropDuplicates(["event_id","event_time"])</code> after a 20-minute watermark.
-          <code>event_id</code> is identity; <code>event_time</code> lets the watermark <em>expire</em>
-          state, so it never grows unbounded.</p>
+  <!-- =============================================================== 01 problem -->
+  <section class="sect" id="problem">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>01</b> The problem</p>
+        <div>
+          <h2 class="sect-title">One broker, one consumer, one truth</h2>
+          <p class="lede">
+            A stream of order events arrives in a Kafka topic. Everything downstream has to be
+            replayable, deduplicated and auditable — without a second consumer and without
+            silently losing late data.
+          </p>
+        </div>
       </div>
-      <div class="card">
-        <h3>Late data</h3>
-        <p>The producer delays events 2-15 min; the watermark is sized <strong>above</strong> that
-          (20 min) so no valid late event is dropped. A shorter watermark silently drops them —
-          we measured 137 lost rows at 10 min, then fixed it.</p>
-      </div>
-      <div class="card">
-        <h3>Checkpointing</h3>
-        <p>One checkpoint per query (<code>bronze</code>, <code>silver</code>, quarantine).
-          Delta + checkpoint = idempotent, effectively-once writes; a replayed micro-batch
-          never double-lands.</p>
-      </div>
-      <div class="card">
-        <h3>Fault tolerance</h3>
-        <p>An ungraceful <code>docker kill</code> mid-batch, then restart: Silver stays duplicate-free
-          and Bronze offsets stay contiguous per partition.</p>
-      </div>
-      <div class="card">
-        <h3>Compaction</h3>
-        <p>5-second micro-batches create small files. <code>OPTIMIZE</code> compacts Bronze/Silver;
-          Gold gets <code>ZORDER BY (seller_id)</code> for the top filter.</p>
-      </div>
-      <div class="card">
-        <h3>Single Kafka consumer</h3>
-        <p>Only Bronze reads Kafka; Silver reads the Bronze <em>Delta</em> stream. One owner of
-          offsets, and Silver is rebuildable by replaying Bronze.</p>
+      <div class="grid-3">
+        <article class="panel">
+          <h4>Replayable</h4>
+          <p>Bronze is an immutable Delta log. Silver reads the Bronze <em>stream</em>, so the
+            pipeline can be rebuilt from the log without touching Kafka twice.</p>
+        </article>
+        <article class="panel">
+          <h4>Deduplicated</h4>
+          <p>Events arrive twice, and late. The dedup key <code>event_id + event_time</code> with a
+            20-minute watermark keeps every valid order and drops every repeat.</p>
+        </article>
+        <article class="panel">
+          <h4>Auditable</h4>
+          <p>Bronze → Silver → Gold, each with its own grain, its own verification script and its
+            own row count you can check by hand.</p>
+        </article>
       </div>
     </div>
   </section>
 
-  <section id="results">
-    <h2><span class="num">05</span>Real measured results</h2>
-    <p class="lead">From a 60 s run at 50 events/s (seed 42) and an ungraceful-crash recovery
-      test. Raw command outputs are committed under <code>docs/assets/</code>.</p>
-    <div class="kpis">
-      <div class="kpi"><div class="v">3277</div><div class="l">events produced (emitted)</div></div>
-      <div class="kpi"><div class="v">259</div><div class="l">duplicates injected</div></div>
-      <div class="kpi"><div class="v">276</div><div class="l">delayed (late) events</div></div>
-      <div class="kpi"><div class="v">3018</div><div class="l">Silver rows after dedup</div></div>
-      <div class="kpi"><div class="v">60</div><div class="l">Gold aggregate rows</div></div>
-      <div class="kpi"><div class="v">3<span class="u">→</span>1</div><div class="l">Bronze active files (OPTIMIZE)</div></div>
-      <div class="kpi"><div class="v">4<span class="u">→</span>1</div><div class="l">Silver active files (OPTIMIZE)</div></div>
-      <div class="kpi"><div class="v">0</div><div class="l">duplicate event_id in Silver</div></div>
+  <!-- ========================================================== 02 architecture -->
+  <section class="sect" id="architecture">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>02</b> Architecture</p>
+        <div>
+          <h2 class="sect-title">Four hops, one broker, zero magic</h2>
+          <p class="lede">
+            Producer → Redpanda → Bronze → Silver → Gold → dashboard. The broker is touched by
+            exactly one job; everything after Bronze is a Delta table on disk.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <article class="panel">
+          <h4>The data path</h4>
+          <p class="mono" style="color:var(--fg-dim);line-height:1.9">
+            Producer ──produce──▶ Redpanda<br />
+            ──readStream──▶ BRONZE (delta)<br />
+            ──readStream(delta)──▶ SILVER (dedup)<br />
+            ──batch + live refresh──▶ GOLD (aggregate)<br />
+            ──every 10 s──▶ metrics.json ──▶ dashboard :8501
+          </p>
+        </article>
+        <article class="panel">
+          <h4>Why the watermark is 20 minutes</h4>
+          <p>The producer delays 10% of events by <strong>2–15 minutes</strong>. With a
+            10-minute watermark Spark silently dropped <strong>137 valid orders</strong> in
+            <code>append</code>-mode dedup. Sizing the watermark above the maximum lateness
+            (20 min) fixed it: <code>numRowsDroppedByWatermark = 0</code> and Silver keeps all
+            3,018 distinct keys.</p>
+        </article>
+        <article class="panel">
+          <h4>Why Silver reads Bronze, not Kafka</h4>
+          <p>One consumer, one source of truth. A replay re-reads the Delta log instead of
+            re-consuming the topic, and the offsets of the Bronze job are the only Kafka
+            offsets in the system.</p>
+        </article>
+        <article class="panel">
+          <h4>Why Gold is overwritten, not merged</h4>
+          <p>Gold is a derived aggregate. A full recompute with <code>mode=overwrite</code> is
+            idempotent, needs no merge bookkeeping, and automatically corrects late events that
+            land after a previous cycle.</p>
+        </article>
+      </div>
     </div>
-
-    <h3>Verification</h3>
-    <table>
-      <thead><tr><th>Check</th><th>Result</th><th class="num">Evidence</th></tr></thead>
-      <tbody>
-        <tr><td>Silver dedup (<code>COUNT(*)=COUNT(DISTINCT event_id)</code>)</td><td><strong>PASS</strong></td><td class="num">3018 / 3018 / 3018</td></tr>
-        <tr><td>Bronze offsets contiguous per partition</td><td><strong>PASS</strong></td><td class="num">1056 · 1170 · 1051</td></tr>
-        <tr><td>Gold == independent recompute from Silver</td><td><strong>PASS</strong></td><td class="num">rev 269805.58</td></tr>
-        <tr><td>Recovery after ungraceful crash (dedup)</td><td><strong>PASS</strong></td><td class="num">4315 / 4315</td></tr>
-        <tr><td>Recovery offsets contiguous</td><td><strong>PASS</strong></td><td class="num">1682 · 1809 · 1424</td></tr>
-      </tbody>
-    </table>
-
-    <p class="note">Note on compaction: <code>OPTIMIZE</code> tombstones replaced files, so the
-      raw count of Parquet files on disk can be <em>higher</em> until <code>VACUUM</code> runs
-      (default 7-day retention). The numbers above are <strong>active</strong> files from the
-      Delta <code>_delta_log</code> (<code>DESCRIBE DETAIL</code>) — the count that governs read cost.</p>
-
-    <p class="note">Screenshots: this page was built in an environment without a capturable
-      desktop, so instead of screenshots it links to the committed, verbatim command outputs in
-      <code>docs/assets/</code> (verify runs, Gold run, Delta inspector, recovery run).</p>
   </section>
 
-  <section id="dashboard">
-    <h2><span class="num">06</span>Live dashboard</h2>
-    <p class="lead">A read-only stakeholder view of the Gold layer: revenue, orders, average
-      order value, top sellers, payment mix, hourly revenue, duplicates removed, watermark
-      lateness and pipeline health. The page polls <code>/api/metrics</code> every <strong>3
-      seconds</strong> and shows an explicit waiting/stale state — it never falls back to sample
-      data.</p>
-
-    <p><span class="tag">Captured live run</span> &nbsp; Isolated verification run
-      (<code>order-events-dashboard</code>, separate paths), snapshot
-      <code>2026-10-20T16:07:27Z</code>. This is a frozen capture on a static page; the
-      canonical dataset is the 3,277 → 3,018 → 60 run above.</p>
-
-    <div class="kpis">
-      <div class="kpi"><div class="v">$219,392.90</div><div class="l">revenue (order_created)</div></div>
-      <div class="kpi"><div class="v">863</div><div class="l">orders</div></div>
-      <div class="kpi"><div class="v">$254.22</div><div class="l">average order value</div></div>
-      <div class="kpi"><div class="v">20</div><div class="l">sellers</div></div>
-      <div class="kpi"><div class="v">201</div><div class="l">duplicates removed (7.68%)</div></div>
-      <div class="kpi"><div class="v">2,616</div><div class="l">Bronze rows</div></div>
-      <div class="kpi"><div class="v">2,415</div><div class="l">Silver rows</div></div>
-      <div class="kpi"><div class="v">96</div><div class="l">Gold rows</div></div>
+  <!-- ================================================================ 03 layers -->
+  <section class="sect" id="layers">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>03</b> Medallion layers</p>
+        <div>
+          <h2 class="sect-title">Each layer has one job and one grain</h2>
+        </div>
+      </div>
+      <table class="sheet">
+        <caption>Layer contract</caption>
+        <thead>
+          <tr><th>Layer</th><th>Path</th><th>Purpose</th><th>Grain</th><th class="num">Rows</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="chip signal">Bronze</span></td>
+            <td class="mono">/lakehouse/bronze/order_events</td>
+            <td>Raw payload + Kafka metadata, immutable</td>
+            <td>one event</td>
+            <td class="num">3,277</td>
+          </tr>
+          <tr>
+            <td><span class="chip">Silver</span></td>
+            <td class="mono">/lakehouse/silver/order_events</td>
+            <td>Parsed, typed, deduplicated, quarantine on bad rows</td>
+            <td>one event (unique)</td>
+            <td class="num">3,018</td>
+          </tr>
+          <tr>
+            <td><span class="chip signal">Gold</span></td>
+            <td class="mono">/lakehouse/gold/hourly_sales</td>
+            <td>Business aggregate for stakeholders</td>
+            <td>hour × seller × payment type</td>
+            <td class="num">60</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-
-    <h3>Top 5 sellers by revenue</h3>
-    <div class="bars" role="img" aria-label="Bar chart: top five sellers by revenue from the captured live run">
-      <div class="bar-row"><div class="bar-label">seller_203</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$13,931.37</div></div>
-      <div class="bar-row"><div class="bar-label">seller_204</div><div class="bar-track"><div class="bar-fill" style="width:99.5%"></div></div><div class="bar-value">$13,861.42</div></div>
-      <div class="bar-row"><div class="bar-label">seller_214</div><div class="bar-track"><div class="bar-fill" style="width:95.3%"></div></div><div class="bar-value">$13,281.34</div></div>
-      <div class="bar-row"><div class="bar-label">seller_218</div><div class="bar-track"><div class="bar-fill" style="width:93.5%"></div></div><div class="bar-value">$13,026.79</div></div>
-      <div class="bar-row"><div class="bar-label">seller_210</div><div class="bar-track"><div class="bar-fill" style="width:90.1%"></div></div><div class="bar-value">$12,552.08</div></div>
-    </div>
-
-    <h3>Payment mix</h3>
-    <div class="bars" role="img" aria-label="Bar chart: revenue by payment type from the captured live run">
-      <div class="bar-row"><div class="bar-label">bank_transfer</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$77,529.15</div></div>
-      <div class="bar-row"><div class="bar-label">credit_card</div><div class="bar-track"><div class="bar-fill" style="width:93.3%"></div></div><div class="bar-value">$72,364.15</div></div>
-      <div class="bar-row"><div class="bar-label">paypal</div><div class="bar-track"><div class="bar-fill" style="width:89.6%"></div></div><div class="bar-value">$69,499.60</div></div>
-    </div>
-
-    <p class="note" style="margin-top:16px">Verified during that run: Silver 2,415 = 2,415
-      distinct keys; Bronze distinct keys 2,415; 0 bad amounts; Gold 96 rows; orders 863 = 863;
-      revenue 219,392.90 = 219,392.90; 0 mismatched groups;
-      <code>numRowsDroppedByWatermark = 0</code>. Freshness 40.7 s, lateness avg 187 s / p95
-      532 s / max 999 s, across 20 refresh cycles (Gold version 0 → 19; the committed API
-      snapshot was captured at version 11).</p>
-
-<pre><code># one command: Redpanda + stream + Gold refresher + dashboard + producer
-bash scripts/live_dashboard.sh
-# open http://localhost:8501  (poll every 3 s)
-bash scripts/stop_live_dashboard.sh
-
-# CI-safe read-only snapshot (preserves OPTIMIZE/ZORDER and Gold version)
-docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
-  /opt/spark/app/gold_refresh.py --once --metrics-only
-python3 tests/verify_dashboard_metrics.py lakehouse/dashboard/metrics.json</code></pre>
-
-    <p>Design, JSON contract, limits and troubleshooting:
-      <a href="DASHBOARD.md">docs/DASHBOARD.md</a>. Evidence:
-      <a href="assets/dashboard_live_metrics.json">live API snapshot</a> ·
-      <a href="assets/dashboard_live_verify.txt">independent Silver/Gold verification</a> ·
-      <a href="assets/dashboard_live_refresh.txt">20 refresh cycles</a>.</p>
   </section>
 
-  <section id="tradeoffs">
-    <h2><span class="num">07</span>Trade-offs: streaming vs. scheduled batch</h2>
-    <p class="lead">Structured Streaming is an incremental batch loop. It buys low latency at the
-      cost of always-on compute and stateful complexity.</p>
-    <table>
-      <thead><tr><th>Dimension</th><th>Continuous streaming (this project)</th><th>Micro-batch every 15 min</th></tr></thead>
-      <tbody>
-        <tr><td>Latency</td><td>seconds</td><td>minutes</td></tr>
-        <tr><td>Cost</td><td>always-on driver + executors</td><td>compute only during the run</td></tr>
-        <tr><td>Complexity</td><td>watermarks, state, checkpoints</td><td>plain batch</td></tr>
-        <tr><td>Small files</td><td>many → needs <code>OPTIMIZE</code></td><td>one set per run</td></tr>
-        <tr><td>Choose when</td><td>sub-minute freshness SLO</td><td>minutes of latency acceptable</td></tr>
-      </tbody>
-    </table>
+  <!-- ============================================================== 04 concerns -->
+  <section class="sect" id="concerns">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>04</b> Engineering concerns</p>
+        <div>
+          <h2 class="sect-title">The five things that actually bite</h2>
+        </div>
+      </div>
+      <div class="grid-2">
+        <article class="panel">
+          <h4>Late data</h4>
+          <p>Event time ≠ processing time. The watermark must sit above the maximum lateness,
+            otherwise <code>dropDuplicates</code> in append mode <em>discards</em> rows it has
+            never seen. Measured and fixed: 20 min, zero dropped rows.</p>
+        </article>
+        <article class="panel">
+          <h4>Idle detection</h4>
+          <p><code>numInputRows</code> is per micro-batch, so a naive supervisor sees a constant
+            number and declares "idle" mid-stream. Counting rows monotonically per
+            (query, batchId) fixed an early stop at 2,574 of 3,277 rows.</p>
+        </article>
+        <article class="panel">
+          <h4>Small files</h4>
+          <p>Five-second micro-batches write a file each. <code>OPTIMIZE</code> with
+            <code>ZORDER BY (seller_id)</code> took active files from Bronze 3→1, Silver 4→1,
+            Gold 1→1 and made the Gold table readable in one scan.</p>
+        </article>
+        <article class="panel">
+          <h4>Fault tolerance</h4>
+          <p>After a <code>docker kill</code> mid-stream, the checkpoint resumed from the
+            committed offsets: Silver 4,315 = 4,315 distinct keys, offsets contiguous per
+            partition (1682 / 1809 / 1424).</p>
+        </article>
+        <article class="panel">
+          <h4>Quarantine</h4>
+          <p>Unparseable rows go to a sibling Delta table, not inside Silver — a nested path
+            would silently become part of the Silver table and corrupt its counts.</p>
+        </article>
+        <article class="panel">
+          <h4>Serving safely</h4>
+          <p>The dashboard never touches Delta. A refresher writes one atomic JSON snapshot and
+            a read-only stdlib server serves it — no Spark in the web tier, no credentials in
+            the browser, no possibility of the UI mutating the lakehouse.</p>
+        </article>
+      </div>
+    </div>
   </section>
 
-  <section id="run">
-    <h2><span class="num">08</span>How to run</h2>
-<pre><code># start the stack (Redpanda, Console, topic-init, Spark)
-docker-compose build spark &amp;&amp; docker-compose up -d
+  <!-- ============================================================== 05 results -->
+  <section class="sect" id="results">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>05</b> Measured results</p>
+        <div>
+          <h2 class="sect-title">What the pipeline actually produced</h2>
+          <p class="lede">
+            One canonical run: 3,000 events produced, deduplicated, aggregated and verified.
+            Raw command outputs are committed in <code>docs/assets/</code>.
+          </p>
+        </div>
+      </div>
 
-# emit events (60s @ 50/s, reproducible)
-docker-compose run --rm producer python event_producer.py --duration 60 --rate 50 --seed 42
+      <div class="kpis">
+        <div class="kpi hot"><div class="v">3,277</div><div class="l">Bronze rows</div></div>
+        <div class="kpi"><div class="v">3,018</div><div class="l">Silver rows</div></div>
+        <div class="kpi"><div class="v">60</div><div class="l">Gold rows</div></div>
+        <div class="kpi"><div class="v">1,055</div><div class="l">orders</div></div>
+        <div class="kpi hot"><div class="v">$269,805.58</div><div class="l">product revenue</div></div>
+        <div class="kpi"><div class="v">$255.74</div><div class="l">avg order value</div></div>
+        <div class="kpi"><div class="v">20</div><div class="l">sellers</div></div>
+        <div class="kpi"><div class="v">0</div><div class="l">quarantine rows</div></div>
+      </div>
 
-# Kafka -&gt; Bronze -&gt; Silver
-docker-compose run --rm spark spark-submit \
+      <div class="grid-2" style="margin-top:1.6rem">
+        <table class="sheet">
+          <caption>Verification · canonical run</caption>
+          <thead><tr><th>Check</th><th>Result</th><th class="num">Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>Silver = distinct <code>event_id</code></td><td><span class="chip">PASS</span></td><td class="num">3018 / 3018</td></tr>
+            <tr><td>Silver = distinct (event_id, event_time)</td><td><span class="chip">PASS</span></td><td class="num">3018 / 3018</td></tr>
+            <tr><td>Rows with bad <code>total_amount</code></td><td><span class="chip">PASS</span></td><td class="num">0</td></tr>
+            <tr><td>Bronze offsets contiguous per partition</td><td><span class="chip">PASS</span></td><td class="num">1056 · 1170 · 1051</td></tr>
+            <tr><td>Gold = independent recompute</td><td><span class="chip">PASS</span></td><td class="num">rev 269805.58</td></tr>
+            <tr><td>Recovery after ungraceful crash</td><td><span class="chip">PASS</span></td><td class="num">4315 / 4315</td></tr>
+            <tr><td>Watermark dropped rows</td><td><span class="chip">PASS</span></td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+
+        <table class="sheet">
+          <caption>Compaction · active files</caption>
+          <thead><tr><th>Table</th><th class="num">Before</th><th class="num">After</th><th class="num">Z-order</th></tr></thead>
+          <tbody>
+            <tr><td>Bronze</td><td class="num">3</td><td class="num">1</td><td class="num">—</td></tr>
+            <tr><td>Silver</td><td class="num">4</td><td class="num">1</td><td class="num">—</td></tr>
+            <tr><td>Gold</td><td class="num">1</td><td class="num">1</td><td class="num">seller_id</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="note" style="margin-top:1.4rem">
+        Compaction replaces files with tombstones, so the raw Parquet count on disk can stay high
+        until <code>VACUUM</code> runs. The numbers above are <em>active</em> files from
+        <code>DESCRIBE DETAIL</code> — the count that governs read cost.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ 06 dashboard -->
+  <section class="sect" id="dashboard">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>06</b> Live dashboard</p>
+        <div>
+          <h2 class="sect-title">The dashboard lives on its own page</h2>
+          <p class="lede">
+            A read-only stakeholder view of the Gold layer: revenue, orders, average order
+            value, top sellers, payment mix, hourly revenue, duplicates removed, lateness and
+            pipeline health. It polls <code>/api/metrics</code> every <strong>3 seconds</strong>
+            and never falls back to sample data — if the pipeline is not running it says so.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <article class="panel">
+          <h4>Open it</h4>
+          <p>The dashboard is a separate page of this site, and the same page is what the local
+            container serves on <code>http://localhost:8501</code>.</p>
+          <p><a class="btn primary" href="dashboard.html">Open dashboard.html <span class="arrow">→</span></a></p>
+          <p class="mono" style="color:var(--fg-faint)">bash scripts/live_dashboard.sh</p>
+        </article>
+        <article class="panel">
+          <h4>How it is wired</h4>
+          <p><code>spark/gold_refresh.py</code> recomputes Gold from Silver every 10 s and
+            writes an <strong>atomic</strong> <code>metrics.json</code>.
+            <code>dashboard/server.py</code> serves it with the Python standard library only —
+            no Spark in the web tier, no third-party packages, no CDN.</p>
+          <p><code>spark/gold_logic.py</code> is shared with the batch compaction job, so the
+            live view can never drift from the batch Gold table.</p>
+        </article>
+      </div>
+
+      <h3 style="margin:2.2rem 0 1rem">Captured live run <span class="mono" style="color:var(--fg-faint);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase">· isolated topic, 2026-10-20</span></h3>
+      <div class="kpis">
+        <div class="kpi hot"><div class="v">$219,392.90</div><div class="l">revenue</div></div>
+        <div class="kpi"><div class="v">863</div><div class="l">orders</div></div>
+        <div class="kpi"><div class="v">$254.22</div><div class="l">avg order value</div></div>
+        <div class="kpi"><div class="v">2,616</div><div class="l">Bronze rows</div></div>
+        <div class="kpi"><div class="v">2,415</div><div class="l">Silver rows</div></div>
+        <div class="kpi"><div class="v">201</div><div class="l">duplicates removed</div></div>
+        <div class="kpi"><div class="v">96</div><div class="l">Gold rows</div></div>
+        <div class="kpi"><div class="v">40.7 s</div><div class="l">data freshness</div></div>
+      </div>
+
+      <div class="grid-2" style="margin-top:1.6rem">
+        <div>
+          <h4 style="margin-bottom:.8rem">Top 5 sellers by revenue</h4>
+          <div class="bars" role="img" aria-label="Top five sellers by revenue in the captured live run">
+            <div class="bar-row"><div class="bar-label">seller_203</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$13,931.37</div></div>
+            <div class="bar-row"><div class="bar-label">seller_204</div><div class="bar-track"><div class="bar-fill" style="width:99.5%"></div></div><div class="bar-value">$13,861.42</div></div>
+            <div class="bar-row"><div class="bar-label">seller_214</div><div class="bar-track"><div class="bar-fill" style="width:95.3%"></div></div><div class="bar-value">$13,281.34</div></div>
+            <div class="bar-row"><div class="bar-label">seller_218</div><div class="bar-track"><div class="bar-fill" style="width:93.5%"></div></div><div class="bar-value">$13,026.79</div></div>
+            <div class="bar-row"><div class="bar-label">seller_210</div><div class="bar-track"><div class="bar-fill" style="width:90.1%"></div></div><div class="bar-value">$12,552.08</div></div>
+          </div>
+        </div>
+        <div>
+          <h4 style="margin-bottom:.8rem">Revenue by hour</h4>
+          <div class="bars" role="img" aria-label="Revenue by hour in the captured live run">
+            <div class="bar-row"><div class="bar-label">15:00 UTC</div><div class="bar-track"><div class="bar-fill alt" style="width:6.9%"></div></div><div class="bar-value">$14,127.77</div></div>
+            <div class="bar-row"><div class="bar-label">16:00 UTC</div><div class="bar-track"><div class="bar-fill alt" style="width:100%"></div></div><div class="bar-value">$205,265.13</div></div>
+          </div>
+          <h4 style="margin:1.4rem 0 .8rem">Payment mix</h4>
+          <div class="bars" role="img" aria-label="Revenue by payment type in the captured live run">
+            <div class="bar-row"><div class="bar-label">bank_transfer</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-value">$77,529.15</div></div>
+            <div class="bar-row"><div class="bar-label">credit_card</div><div class="bar-track"><div class="bar-fill" style="width:93.3%"></div></div><div class="bar-value">$72,364.15</div></div>
+            <div class="bar-row"><div class="bar-label">paypal</div><div class="bar-track"><div class="bar-fill" style="width:89.6%"></div></div><div class="bar-value">$69,499.60</div></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="note" style="margin-top:1.4rem">
+        Verified in that run: Silver 2,415 = 2,415 distinct keys · Bronze distinct keys 2,415 ·
+        0 bad amounts · Gold 96 rows · orders 863 = 863 · revenue 219,392.90 = 219,392.90 ·
+        0 mismatched groups · <code>numRowsDroppedByWatermark = 0</code> · 20 refresh cycles
+        (Gold version 0 → 19; the committed API snapshot was captured at version 11).
+        Raw evidence:
+        <a href="assets/dashboard_live_metrics.json" style="color:var(--signal)">API snapshot</a> ·
+        <a href="assets/dashboard_live_verify.txt" style="color:var(--signal)">independent verification</a> ·
+        <a href="assets/dashboard_live_refresh.txt" style="color:var(--signal)">20 refresh cycles</a> ·
+        <a href="DASHBOARD.md" style="color:var(--signal)">dashboard design &amp; limits</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ 07 trade-offs -->
+  <section class="sect" id="tradeoffs">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>07</b> Trade-offs</p>
+        <div>
+          <h2 class="sect-title">Streaming is a batch problem wearing a hat</h2>
+          <p class="lede">
+            Structured Streaming is an incremental batch loop. It buys sub-minute latency and
+            pays for it with always-on compute, stateful complexity and small files.
+          </p>
+        </div>
+      </div>
+      <table class="sheet">
+        <caption>Continuous streaming vs. scheduled batch</caption>
+        <thead><tr><th>Dimension</th><th>Continuous streaming · this project</th><th>Micro-batch every 15 min</th></tr></thead>
+        <tbody>
+          <tr><td>Latency</td><td>seconds</td><td>minutes</td></tr>
+          <tr><td>Cost</td><td>always-on driver + executors</td><td>compute only during the run</td></tr>
+          <tr><td>Complexity</td><td>watermarks, state, checkpoints</td><td>plain batch</td></tr>
+          <tr><td>Small files</td><td>many → needs <code>OPTIMIZE</code></td><td>one set per run</td></tr>
+          <tr><td>Choose when</td><td>sub-minute freshness SLO</td><td>minutes of latency are acceptable</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================================================================= 08 run -->
+  <section class="sect" id="run">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>08</b> How to run</p>
+        <div>
+          <h2 class="sect-title">Four commands, no cloud account</h2>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-head"><span>terminal</span><span>docker compose · local</span></div>
+        <div class="code-body"><pre><code><span class="cmt"># 1 · build + start Redpanda, Console, topic</span>
+<span class="cmd">docker-compose</span> build spark &amp;&amp; <span class="cmd">docker-compose</span> up -d
+
+<span class="cmt"># 2 · emit events (60s @ 50/s, reproducible seed)</span>
+<span class="cmd">docker-compose</span> run --rm producer python event_producer.py --duration 60 --rate 50 --seed 42
+
+<span class="cmt"># 3 · Kafka → Bronze → Silver</span>
+<span class="cmd">docker-compose</span> run --rm spark spark-submit \
   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3,io.delta:delta-spark_2.12:3.2.0 \
-  /opt/spark/app/stream_ingestion.py
+  <span class="path">/opt/spark/app/stream_ingestion.py</span>
 
-# Gold aggregate + OPTIMIZE / ZORDER
-docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
-  /opt/spark/app/gold_compaction.py
+<span class="cmt"># 4 · Gold aggregate + OPTIMIZE / ZORDER</span>
+<span class="cmd">docker-compose</span> run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 \
+  <span class="path">/opt/spark/app/gold_compaction.py</span>
 
-# verify + recovery
-docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:3.2.0 /opt/spark/tests/verify_silver_dedup.py
-bash tests/verify_recovery.sh</code></pre>
-    <p>Console · <a href="http://localhost:8080">localhost:8080</a> &nbsp;·&nbsp; Spark UI ·
-      <a href="http://localhost:4040">localhost:4040</a> &nbsp;·&nbsp; Dashboard ·
-      <a href="http://localhost:8501">localhost:8501</a> (after
-      <code>scripts/live_dashboard.sh</code>). Full steps in
-      <a href="RUNBOOK.md">docs/RUNBOOK.md</a>.</p>
-  </section>
-
-  <section id="cloud">
-    <h2><span class="num">09</span>Run it in the cloud (free)</h2>
-    <p class="lead">The whole pipeline can run on GitHub's cloud runners on demand — no local
-      install, no cloud account, no cost.</p>
-    <p><a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml"><img
-      src="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml/badge.svg"
-      alt="Cloud demo run status" /></a></p>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Trigger a cloud run</a>
-      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions">All runs</a>
-    </div>
-    <p style="margin-top:16px">A GitHub Actions workflow
-      (<code>.github/workflows/demo-run.yml</code>) spins up Redpanda, streams events through
-      Bronze → Silver → Gold on an ephemeral runner, runs the same verification scripts,
-      generates a read-only dashboard snapshot, calls the dashboard API, and uploads the
-      evidence as artifacts. You can set the producer duration/rate/seed when you start it.</p>
-    <p class="note">How the trigger works: GitHub Pages is <em>static</em> (it serves files, it
-      cannot run code), and a browser must never hold a cloud key. So the button opens GitHub's
-      secure "Run workflow" page, which requires your GitHub login — that is the authentication
-      and the safety gate. See <a href="CLOUD_DEMO.md">docs/CLOUD_DEMO.md</a> for the
-      architecture and for the optional one-click upgrade (a tiny serverless function holding a
-      scoped token).</p>
-  </section>
-
-  <section id="links">
-    <h2><span class="num">10</span>Links</h2>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">GitHub repository</a>
-      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/README.md">README</a>
-      <a class="btn" href="ARCHITECTURE.md">Architecture</a>
-      <a class="btn" href="CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
-      <a class="btn" href="DASHBOARD.md">Dashboard</a>
-      <a class="btn" href="RUNBOOK.md">Runbook</a>
-      <a class="btn" href="CLOUD_DEMO.md">Cloud demo</a>
-      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/PROJECT_MEMORY.md">Project memory</a>
+<span class="cmt"># 5 · optional · live dashboard (refresher + UI + producer)</span>
+<span class="cmd">bash</span> <span class="path">scripts/live_dashboard.sh</span>   <span class="cmt"># open :8501</span></code></pre></div>
+      </div>
+      <p class="note" style="margin-top:1rem">
+        Redpanda Console → <span class="mono">localhost:8080</span> · Spark UI →
+        <span class="mono">localhost:4040</span> · Dashboard →
+        <span class="mono">localhost:8501</span> · Full steps in
+        <a href="RUNBOOK.md" style="color:var(--signal)">RUNBOOK.md</a>.
+      </p>
     </div>
   </section>
 
+  <!-- ================================================================ 09 cloud -->
+  <section class="sect" id="cloud">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>09</b> Cloud · free</p>
+        <div>
+          <h2 class="sect-title">Run the whole thing on GitHub's runners</h2>
+          <p class="lede">
+            One click, no local install, no cloud account, no cost. The workflow boots Redpanda,
+            streams events, builds and compacts Gold, runs the verification scripts, generates a
+            dashboard snapshot, calls the dashboard API and uploads the evidence.
+          </p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <article class="panel">
+          <h4>Verified run</h4>
+          <p>Run <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/runs/39156492225" style="color:var(--signal)">#39156492225</a>
+            reproduced the canonical result exactly: Bronze 3,277 → Silver
+            <strong>3,018</strong> (distinct keys 3,018, zero watermark drops) → Gold 60 with
+            revenue 269,805.58, every verification step green.</p>
+        </article>
+        <article class="panel">
+          <h4>Trigger it</h4>
+          <p>Actions → <em>Cloud demo run</em> → <em>Run workflow</em>. Duration, rate and seed are
+            inputs, so the run is reproducible and the assertions are invariant-based rather than
+            hardcoded counts.</p>
+          <p><a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml" target="_blank" rel="noopener">Open the workflow <span class="arrow">→</span></a></p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== 10 links -->
+  <section class="sect" id="links">
+    <div class="wrap">
+      <div class="sect-head">
+        <p class="sect-index"><b>10</b> Links</p>
+        <div>
+          <h2 class="sect-title">Everything else lives in the repo</h2>
+        </div>
+      </div>
+      <div class="grid-3">
+        <a class="panel" href="dashboard.html" style="text-decoration:none"><h4>Live dashboard</h4><p>Separate page · live KPIs, charts, auto-refresh.</p></a>
+        <a class="panel" href="DASHBOARD.md" style="text-decoration:none"><h4>Dashboard docs</h4><p>Architecture, JSON contract, verified run, limits.</p></a>
+        <a class="panel" href="ARCHITECTURE.md" style="text-decoration:none"><h4>Architecture</h4><p>Components, schemas, wiring, ports, repo map.</p></a>
+        <a class="panel" href="CONCEPTS_AND_DESIGN_DECISIONS.md" style="text-decoration:none"><h4>Concepts</h4><p>Watermarks, dedup, Delta, Z-order — and 25 interview Q&amp;A.</p></a>
+        <a class="panel" href="RUNBOOK.md" style="text-decoration:none"><h4>Runbook</h4><p>Run, verify, inspect, recover, reset.</p></a>
+        <a class="panel" href="CLOUD_DEMO.md" style="text-decoration:none"><h4>Cloud demo</h4><p>How the free GitHub Actions run works.</p></a>
+      </div>
+    </div>
+  </section>
 </main>
 
-<footer class="wrap">
-  <p>Redpanda · PySpark Structured Streaming · Delta Lake — built end to end with measured
-     evidence. Licensed <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/LICENSE">MIT</a>. © 2026 Harshit Thakkar.</p>
+<footer class="footer">
+  <div class="wrap footer-in">
+    <span>Project 02 · Real-Time Streaming &amp; Medallion Lakehouse · MIT licence</span>
+    <span>
+      <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-" target="_blank" rel="noopener">Repository</a> ·
+      <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/PROJECT_MEMORY.md" target="_blank" rel="noopener">Project memory</a> ·
+      <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+    </span>
+  </div>
 </footer>
 
 <script>
+  // theme: control room (dark) by default, blueprint paper (light) on request
   (function () {
     var root = document.documentElement;
     var btn = document.getElementById('themeToggle');
     var saved = null;
-    try { saved = localStorage.getItem('theme'); } catch (e) {}
-    if (saved) root.setAttribute('data-theme', saved);
+    try { saved = localStorage.getItem('p2-theme'); } catch (e) {}
+    if (saved === 'paper' || saved === 'night') root.setAttribute('data-theme', saved);
     btn.addEventListener('click', function () {
-      var current = root.getAttribute('data-theme');
-      if (!current) {
-        current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-      var next = current === 'dark' ? 'light' : 'dark';
+      var next = root.getAttribute('data-theme') === 'paper' ? 'night' : 'paper';
       root.setAttribute('data-theme', next);
-      try { localStorage.setItem('theme', next); } catch (e) {}
+      try { localStorage.setItem('p2-theme', next); } catch (e) {}
     });
   })();
 </script>

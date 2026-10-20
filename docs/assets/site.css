@@ -1,0 +1,1008 @@
+/* ==========================================================================
+   site.css — "Control Room" design system
+   Project 2 · Real-Time Streaming & Medallion Lakehouse Pipeline
+   --------------------------------------------------------------------------
+   Aesthetic: industrial / utilitarian blueprint, editorial typography,
+   one signal-amber accent on a graphite ground (light mode = warm paper).
+   Fonts are self-hosted: Bricolage Grotesque (display), IBM Plex Sans (body),
+   IBM Plex Mono (data). No CDN, no framework, no build step.
+   ========================================================================== */
+
+/* --------------------------------------------------------------- 1. tokens */
+:root {
+  /* dark is the default: a control room at night */
+  --bg: #0b0e13;
+  --bg-2: #10141b;
+  --surface: #131922;
+  --surface-2: #182029;
+  --line: rgba(233, 229, 219, 0.11);
+  --line-2: rgba(233, 229, 219, 0.22);
+  --fg: #e9e5db;
+  --fg-dim: #98a1ad;
+  --fg-faint: #6b7481;
+  --signal: #f2a93b;
+  --signal-soft: rgba(242, 169, 59, 0.14);
+  --signal-ink: #17120a;
+  --data: #4fb8a6;
+  --data-soft: rgba(79, 184, 166, 0.14);
+  --warn: #e0705a;
+  --grid-line: rgba(233, 229, 219, 0.045);
+
+  --display: 'Bricolage Grotesque', 'Bricolage Grotesque Fallback', Georgia, serif;
+  --body: 'IBM Plex Sans', 'Helvetica Neue', Helvetica, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --step--1: 0.78rem;
+  --step-0: 0.95rem;
+  --step-1: 1.12rem;
+  --step-2: clamp(1.5rem, 2.6vw, 2.1rem);
+  --step-3: clamp(2rem, 4.4vw, 3.1rem);
+  --step-4: clamp(2.6rem, 7vw, 5.4rem);
+
+  --gutter: clamp(1.25rem, 4vw, 2.5rem);
+  --section-y: clamp(3.5rem, 8vw, 7rem);
+  --maxw: 1220px;
+
+  --radius: 3px;
+  --shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.85);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+[data-theme='paper'] {
+  --bg: #f1eee5;
+  --bg-2: #eae6db;
+  --surface: #fbf9f3;
+  --surface-2: #f4f1e8;
+  --line: rgba(20, 24, 31, 0.14);
+  --line-2: rgba(20, 24, 31, 0.3);
+  --fg: #14181f;
+  --fg-dim: #59626e;
+  --fg-faint: #8a929c;
+  --signal: #a86a05;
+  --signal-soft: rgba(168, 106, 5, 0.12);
+  --signal-ink: #fffaf0;
+  --data: #15776a;
+  --data-soft: rgba(21, 119, 106, 0.12);
+  --warn: #b0402a;
+  --grid-line: rgba(20, 24, 31, 0.05);
+  --shadow: 0 24px 60px -34px rgba(20, 24, 31, 0.45);
+}
+
+/* ---------------------------------------------------------------- 2. reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: var(--step-0);
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* blueprint grid + grain: the texture that makes the page feel like paper
+   on a drafting table rather than a SaaS template */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 78%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+}
+
+main,
+.topbar,
+.footer {
+  position: relative;
+  z-index: 1;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--signal);
+  color: var(--signal-ink);
+  padding: 0.7rem 1.1rem;
+  z-index: 100;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+}
+
+.skip:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+/* ------------------------------------------------------------ 3. typography */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--display);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+h1 {
+  font-size: var(--step-4);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+h2 {
+  font-size: var(--step-3);
+}
+
+h3 {
+  font-size: var(--step-2);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h4 {
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 1em;
+}
+
+strong {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+em {
+  font-style: italic;
+  color: var(--fg-dim);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.08em 0.36em;
+  color: var(--signal);
+  white-space: nowrap;
+}
+
+a code {
+  color: inherit;
+}
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.72;
+  color: var(--fg);
+  tab-size: 2;
+}
+
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  white-space: pre;
+  font-size: inherit;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin: 0 0 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 26px;
+  height: 1px;
+  background: var(--signal);
+  flex: none;
+}
+
+.deck {
+  font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--fg-dim);
+  max-width: 58ch;
+}
+
+.lede {
+  font-size: var(--step-1);
+  color: var(--fg-dim);
+  max-width: 66ch;
+}
+
+/* ------------------------------------------------------------- 4. structure */
+.wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+}
+
+.sect {
+  padding-block: var(--section-y);
+  border-top: 1px solid var(--line);
+  position: relative;
+}
+
+.sect-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.4rem;
+  margin-bottom: 2.4rem;
+}
+
+@media (min-width: 900px) {
+  .sect-head {
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+}
+
+.sect-index {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-top: 0.55rem;
+}
+
+.sect-index b {
+  color: var(--signal);
+  font-weight: 500;
+}
+
+.sect-index::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+
+.sect-title {
+  max-width: 30ch;
+}
+
+.sect-title + .lede,
+.sect-title + p {
+  margin-top: 1rem;
+}
+
+.grid-2 {
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.grid-3 {
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.stack > * + * {
+  margin-top: 1.1rem;
+}
+
+/* -------------------------------------------------------------- 5. topbar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  min-height: 54px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.brand b {
+  color: var(--signal);
+  font-weight: 500;
+}
+
+.brand span {
+  color: var(--fg-faint);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav a {
+  text-decoration: none;
+  color: var(--fg-dim);
+  padding: 0.45rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.nav a:hover {
+  color: var(--fg);
+  border-color: var(--line-2);
+}
+
+.nav a[aria-current='page'] {
+  color: var(--signal);
+  border-color: var(--signal-soft);
+  background: var(--signal-soft);
+}
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--line-2);
+  color: var(--fg-dim);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.theme-toggle:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+@media (max-width: 720px) {
+  .brand span {
+    display: none;
+  }
+
+  .nav a {
+    padding: 0.45rem 0.5rem;
+  }
+}
+
+/* ---------------------------------------------------------------- 6. hero */
+.hero {
+  position: relative;
+  padding-top: clamp(3rem, 7vw, 5.5rem);
+  padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
+  overflow: hidden;
+}
+
+.hero-grid {
+  display: grid;
+  gap: clamp(2rem, 5vw, 3.6rem);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .hero-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+}
+
+.hero h1 {
+  max-width: 15ch;
+}
+
+.hero h1 .accent {
+  color: var(--signal);
+}
+
+.hero .deck {
+  margin-top: 1.4rem;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.8rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.78rem 1.15rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  color: var(--fg);
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.22s var(--ease), border-color 0.22s var(--ease),
+    background 0.22s var(--ease), color 0.22s var(--ease);
+}
+
+.btn:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+  transform: translateY(-2px);
+}
+
+.btn.primary {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+  font-weight: 500;
+}
+
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--signal) 86%, #fff);
+  color: var(--signal-ink);
+}
+
+.btn .arrow {
+  transition: transform 0.22s var(--ease);
+}
+
+.btn:hover .arrow {
+  transform: translateX(3px);
+}
+
+/* spec strip: mono metadata blocks separated by hairlines */
+.spec-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  border-top: 1px solid var(--line);
+  margin-top: 2.6rem;
+}
+
+.spec {
+  padding: 0.95rem 1rem 0.95rem 0;
+  border-right: 1px solid var(--line);
+}
+
+.spec:last-child {
+  border-right: 0;
+}
+
+.spec .k {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.spec .v {
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------- 7. schematic / spine */
+.schematic {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(var(--surface) 0%, var(--surface) 100%),
+    var(--surface);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.schematic-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.4rem;
+}
+
+.schematic svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.schematic .flow {
+  stroke-dasharray: 6 7;
+  animation: flow 1.6s linear infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
+.schematic .node-box {
+  fill: var(--surface-2);
+  stroke: var(--line-2);
+}
+
+.schematic .node-box.silver {
+  stroke: var(--data);
+}
+
+.schematic .node-box.gold {
+  stroke: var(--signal);
+}
+
+.schematic .lbl {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  fill: var(--fg-dim);
+  text-transform: uppercase;
+}
+
+.schematic .val {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  fill: var(--fg);
+}
+
+.schematic .val.hot {
+  fill: var(--signal);
+}
+
+.schematic .wire {
+  stroke: var(--line-2);
+}
+
+.schematic .wire.live {
+  stroke: var(--signal);
+}
+
+/* corner ticks: a drafting-table detail used on every panel */
+.panel {
+  position: relative;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.3rem 1.3rem 1.4rem;
+}
+
+.panel::before,
+.panel::after {
+  content: '';
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--signal);
+  opacity: 0.55;
+  transition: opacity 0.25s var(--ease);
+}
+
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.panel:hover::before,
+.panel:hover::after {
+  opacity: 1;
+}
+
+.panel h4 {
+  margin-bottom: 0.5rem;
+}
+
+.panel p:last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------- 8. kpis */
+.kpis {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+}
+
+.kpi {
+  background: var(--surface);
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+.kpi .v {
+  font-family: var(--display);
+  font-size: clamp(1.35rem, 2.4vw, 1.85rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi .l {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-top: 0.45rem;
+}
+
+.kpi.hot .v {
+  color: var(--signal);
+}
+
+/* ----------------------------------------------------------- 9. data sheet */
+.sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.sheet caption {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding-bottom: 0.8rem;
+}
+
+.sheet th,
+.sheet td {
+  text-align: left;
+  padding: 0.7rem 0.9rem 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.sheet thead th {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-weight: 500;
+  border-bottom-color: var(--line-2);
+  white-space: nowrap;
+}
+
+.sheet td.num,
+.sheet th.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-right: 0;
+}
+
+.sheet tbody tr {
+  transition: background 0.18s var(--ease);
+}
+
+.sheet tbody tr:hover {
+  background: var(--surface);
+}
+
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 2px;
+  border: 1px solid var(--data);
+  color: var(--data);
+  background: var(--data-soft);
+  white-space: nowrap;
+}
+
+.chip.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.chip.signal {
+  border-color: var(--signal);
+  color: var(--signal);
+  background: var(--signal-soft);
+}
+
+/* --------------------------------------------------------------- 10. bars */
+.bars {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr) 6rem;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.bar-label {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  height: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--signal);
+  border-radius: 999px;
+}
+
+.bar-fill.alt {
+  background: var(--data);
+}
+
+.bar-value {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ 11. callout */
+.callout {
+  border-left: 2px solid var(--signal);
+  background: var(--surface);
+  padding: 1rem 1.2rem;
+  font-size: 0.94rem;
+  color: var(--fg-dim);
+}
+
+.callout strong {
+  color: var(--fg);
+}
+
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+.note {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--fg-faint);
+}
+
+/* ---------------------------------------------------------------- 12. code */
+.code {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  background: var(--surface);
+}
+
+.code-body {
+  padding: 1.1rem 1.2rem;
+  overflow-x: auto;
+}
+
+.code-body .cmt {
+  color: var(--fg-faint);
+}
+
+.code-body .cmd {
+  color: var(--data);
+}
+
+.code-body .path {
+  color: var(--signal);
+}
+
+/* ------------------------------------------------------------- 13. footer */
+.footer {
+  border-top: 1px solid var(--line);
+  padding-block: 2.4rem 3rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+  letter-spacing: 0.06em;
+}
+
+.footer-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer a {
+  color: var(--fg-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.footer a:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+/* --------------------------------------------------------- 14. entrances */
+/* The entrance is an enhancement: the base state is visible, so a browser
+   that never runs the animation still shows the content. */
+.reveal {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    animation: rise 0.7s var(--ease) both;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.d1 { animation-delay: 0.05s; }
+.d2 { animation-delay: 0.14s; }
+.d3 { animation-delay: 0.23s; }
+.d4 { animation-delay: 0.32s; }
+.d5 { animation-delay: 0.41s; }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+
+  .schematic .flow {
+    animation: none;
+  }
+
+  .btn:hover {
+    transform: none;
+  }
+}
