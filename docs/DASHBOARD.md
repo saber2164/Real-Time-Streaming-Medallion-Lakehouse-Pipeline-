@@ -1,10 +1,14 @@
 # Live stakeholder dashboard
 
-A read-only web dashboard for the Gold layer:
+A read-only web dashboard for the Gold layer. It has **two homes, one page**:
 
-```
-http://localhost:8501
-```
+| Where | URL | What it shows |
+|-------|-----|---------------|
+| Live (local) | `http://localhost:8501` | Real metrics from the running pipeline, refreshed every 3 s |
+| Published (GitHub Pages) | `/dashboard.html` | The committed snapshot, clearly labelled **Published snapshot** |
+
+Both are served by the **same file** — `docs/dashboard.html` — so the live view
+and the published page can never drift apart.
 
 It shows revenue, orders, sellers, duplicate removal, late-data behaviour and
 pipeline health, with four charts and a 3-second auto-refresh. Every number is
@@ -24,6 +28,24 @@ derived from the Delta lakehouse — there is no sample data in the UI.
 The page polls `GET /api/metrics` every 3 seconds and keeps the previous snapshot
 visible while a new one is fetched. If no snapshot exists it shows an explicit
 **waiting** state instead of inventing values.
+
+### Two hosts, one page
+
+`docs/dashboard.html` carries a deployment marker:
+
+```html
+<meta name="p2-deploy" content="static" />
+```
+
+- On **GitHub Pages** the marker stays `static`: the page loads the committed
+  snapshot (`assets/dashboard_live_metrics.json`), shows a **Published snapshot**
+  badge and a banner explaining that live numbers need the local stack.
+- The **container** rewrites the marker to `live` when it serves the file, so the
+  page polls `/api/metrics` and shows the **Live** / **Stale** / **Disconnected**
+  states.
+
+The page never probes a URL that does not exist, so the browser console stays
+clean in both modes.
 
 ---
 
@@ -47,17 +69,21 @@ Design rules:
 - **One implementation of the business logic.** `spark/gold_logic.py` is shared
   by `gold_compaction.py` (end-of-run batch) and `gold_refresh.py` (live
   refresher), so the dashboard cannot disagree with the batch Gold table.
+- **One page, two hosts.** `docs/dashboard.html` is the live page *and* the
+  published page; only the deployment marker differs.
 - **The web server is dumb on purpose.** `dashboard/server.py` has no Spark, no
   Delta reader, no database and no third-party Python packages. It serves one
-  HTML file, one JSON file and a health endpoint.
+  HTML file, one JSON file, the static assets and a health endpoint.
 - **Atomic snapshots.** `gold_refresh.py` writes a temp file and `os.replace`s
   it, so the server never reads a half-written JSON file.
 - **Read-only serving.** The dashboard container mounts `./lakehouse` read-only.
   It cannot mutate the lakehouse.
 - **Localhost by default.** Docker Compose binds `127.0.0.1:8501:8501`; the
   service is not exposed on the LAN.
-- **No CDN.** The HTML, CSS, JavaScript and SVG charts are self-contained, so
+- **No CDN.** The HTML, CSS, JavaScript, webfonts and SVG charts are all served
+  from the same origin (the fonts are committed under `docs/assets/fonts/`), so
   the page works offline.
+
 
 ---
 
@@ -283,11 +309,23 @@ the contract.
 | `OPTIMIZE` outside the loop | Rewriting files every 10 s would be wasteful | Keep compaction as a scheduled job (`gold_compaction.py`) |
 | Polling every 3 s | Simple, robust, no WebSocket/SSE infrastructure | SSE/WebSocket for sub-second updates |
 | Read-only static server | Tiny supply chain, starts in milliseconds, cannot mutate data | Add auth/TLS before exposing beyond localhost |
-| No CDN | Works offline and in restricted networks | None for this use case |
+| No CDN | Works offline and in restricted networks; fonts are committed under `docs/assets/fonts/` | None for this use case |
+| One page, two hosts | The live view and the published page cannot drift apart | Split the files if the two UIs ever diverge in purpose |
 | Top 10 sellers / 60 minutes / 12 hours | Keeps the JSON small and the UI readable | Add filters/date range and pagination for a real BI tool |
 
 The dashboard is **not** a BI tool: it has no ad-hoc query layer. Gold is the
 contract; anything more exploratory belongs in SQL/notebooks against Delta.
+
+### Visual design
+
+The page uses the same design system as the showcase site (`docs/assets/site.css`):
+
+- **Aesthetic** — "control room": graphite ground, blueprint grid, hairline
+  rules, drafting corner ticks, one signal-amber accent on a teal data colour.
+- **Type** — Bricolage Grotesque (display) · IBM Plex Sans (body) · IBM Plex Mono
+  (data), all self-hosted. No system font, no CDN.
+- **Motion** — one entrance sequence, animated flow line on the site schematic,
+  3 s poll. Everything respects `prefers-reduced-motion`.
 
 ---
 
@@ -297,8 +335,10 @@ contract; anything more exploratory belongs in SQL/notebooks against Delta.
 |---------|-------|-----|
 | "Waiting for data" | Silver table does not exist yet | Start `stream_ingestion.py`; check `docker logs p2-ingest` |
 | "Stale snapshot" | The refresher stopped or the JSON is older than the freshness threshold | Restart `gold-refresh`; check its logs |
+| Page shows "Published snapshot" | You opened the GitHub Pages copy, not the local server | Use `http://localhost:8501` (the container rewrites the deploy marker) |
 | Dashboard is healthy but KPIs are empty | `METRICS_PATH` points somewhere else | Ensure both services use `/lakehouse/dashboard/metrics.json` |
 | Port 8501 already in use | Another dashboard/container is running | Stop it or change the Compose port mapping |
+| Fonts do not load in the container | The image is stale | Rebuild: `docker-compose --profile dashboard build --no-cache dashboard` |
 | `--metrics-only` exits with "Gold table not found" | Gold has not been built | Run `gold_compaction.py` first, or omit `--metrics-only` |
 | Permission denied writing `metrics.json` | Host volume permissions | Ensure `./lakehouse` is writable by the refresher container |
 | Docker daemon not running | Colima/Docker Desktop stopped | Start it; `docker info` should succeed |

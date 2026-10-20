@@ -266,6 +266,33 @@ good snapshot visible while a fetch is in flight.
 tables, the full recompute becomes the bottleneck; the production upgrade is an incremental
 `MERGE`/`foreachBatch` materialization with the same JSON contract.
 
+### 1.13 One page, two hosts: the live dashboard and the published site
+
+**What.** The dashboard is its own page of the site — `docs/dashboard.html` — and that same
+file is what the container serves on `:8501`. Two hosts, one source of truth:
+
+| Host | Mode | Where the numbers come from |
+|------|------|-----------------------------|
+| GitHub Pages (`/dashboard.html`) | **Published snapshot** | the committed `assets/dashboard_live_metrics.json`, with a banner that says so |
+| Local container (`localhost:8501`) | **Live** | `GET /api/metrics` every 3 s |
+
+**How the page knows.** It carries a deployment marker,
+`<meta name="p2-deploy" content="static">`. The container rewrites that marker to `"live"`
+when it serves the file. The page then picks its data source from the marker. The alternative
+— probing `/api/metrics` and treating a 404 as "static" — works too, but it produces a
+console error on every static load and makes the page guess instead of know.
+
+**Why it matters.** A GitHub Pages site is static: it cannot host a live metrics API. The
+honest options were (a) two separate pages that drift, (b) a page that fakes live numbers,
+or (c) one page that states which mode it is in. (c) is the only one that keeps a single
+implementation and never overstates what the reader is looking at. The published copy shows a
+**captured** snapshot with its capture time; the live copy shows the running pipeline.
+
+**Same discipline as the data.** The rest of the project refuses to publish anything it has
+not measured — the site follows the same rule: the published snapshot is a real captured
+`/api/metrics` payload (committed under `docs/assets/`), not a mock-up, and the UI has no
+sample-data path at all.
+
 ---
 
 ## Part 2 — Alternatives and "why not"
@@ -567,3 +594,22 @@ the loop.
 --once` would overwrite Gold and undo that compaction; `--metrics-only` reads the existing Gold
 table and writes only `metrics.json`, preserving the compacted files and Gold version. CI then
 starts the dashboard and asserts the API contract against the real snapshot.
+
+**Q24. The website is static — how can it show a live dashboard?**
+It cannot, and it does not pretend to. GitHub Pages serves files; there is no API to poll.
+So the dashboard is its own page (`docs/dashboard.html`) that runs in one of two modes: the
+published copy loads the committed snapshot and labels itself **Published snapshot**; the
+container serves the *same file* with the deploy marker rewritten to `live`, so it polls
+`/api/metrics` every 3 seconds. The live numbers come from the local stack
+(`scripts/live_dashboard.sh` → `localhost:8501`), where the Gold refresher is writing the
+snapshot.
+
+**Q25. How do you stop the site and the dashboard from drifting apart, and why does the UI
+look the way it does?**
+Both problems have the same answer: one source of truth. The dashboard page is a single file
+used by both hosts, and it shares the design system (`docs/assets/site.css`) with the showcase
+site, with self-hosted Bricolage Grotesque / IBM Plex Sans / IBM Plex Mono and inline SVG
+charts — no CDN, no framework, no build step. The visual language is deliberately
+"control room": graphite ground, blueprint grid, hairline rules, drafting corner ticks and a
+single signal-amber accent, because the subject is an instrument panel for a running pipeline,
+not a marketing page.

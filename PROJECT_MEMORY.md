@@ -28,6 +28,25 @@ Pages site.
 - Cloud workflow now generates `--once --metrics-only` metrics, starts the
   dashboard, calls `/healthz` + `/api/metrics`, and runs the contract test.
 
+**Site redesign + separate dashboard page (2026-10-21, Phase 10):**
+- The dashboard is now its own page: `docs/dashboard.html` -> `/dashboard.html`
+  on GitHub Pages. One file, two hosts: the published copy shows the committed
+  snapshot with a "Published snapshot" badge; the container rewrites the deploy
+  marker (`<meta name="p2-deploy" content="static">` -> `"live"`) so the local
+  copy polls `/api/metrics` every 3 s. No URL probing, no console errors.
+- The showcase site was redesigned with a shared design system
+  (`docs/assets/site.css`): "control room" aesthetic (graphite ground, blueprint
+  grid, hairline rules, drafting corner ticks, one signal-amber accent),
+  self-hosted Bricolage Grotesque / IBM Plex Sans / IBM Plex Mono (latin subset,
+  167 KB, no CDN), inline SVG charts, light/dark themes, `prefers-reduced-motion`
+  respected.
+- `.dockerignore` added: `lakehouse/`, `checkpoints/` and `.ivy2/` no longer
+  enter the Docker build context; the dashboard image now builds from the repo
+  root so it ships `docs/dashboard.html` + assets.
+- Verified by DOM evaluation (screenshots unavailable - no visible window):
+  fonts loaded, no horizontal overflow, 10 sections, zero console messages in
+  both live and static mode.
+
 **Published:**
 - Repo: https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-
 - Pages: https://saber2164.github.io/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/
@@ -52,7 +71,7 @@ Pages site.
   producer Dockerfile build, Silver-from-Bronze wiring, `delayed` double count,
   duration enforcement, env-default handling, quarantine path nesting.
 - ✅ Phase 6 docs: `README.md`, `docs/ARCHITECTURE.md`,
-  `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` (23 Q&A), `docs/DASHBOARD.md`,
+  `docs/CONCEPTS_AND_DESIGN_DECISIONS.md` (25 Q&A), `docs/DASHBOARD.md`,
   `docs/RUNBOOK.md`, `LICENSE` (MIT), `CHANGELOG.md`.
 - ✅ Phase 7 web page: `docs/index.html` (self-contained, light/dark, inline SVG,
   OpenGraph tags) built from measured results.
@@ -62,6 +81,9 @@ Pages site.
   metrics snapshot, 3 s polling, inline SVG charts, Compose `dashboard` profile,
   live isolated run + canonical snapshot + independent verification. Evidence in
   `docs/assets/dashboard_live_*` and `docs/assets/dashboard_canonical_metrics.json`.
+- ✅ Phase 10 site redesign + separate dashboard page: `docs/dashboard.html`
+  (published snapshot vs. live, one file), shared design system + self-hosted
+  fonts, `.dockerignore`, DOM-verified in both modes, zero console errors.
 
 ## Next Actions
 
@@ -102,6 +124,10 @@ exact documented counts.
 | 2026-10-20 | Live dashboard demo on isolated topic `order-events-dashboard` and `/lakehouse/dashboard-demo/*` | reuse canonical `order-events`/paths | Keeps the canonical 3277/3018/60 dataset untouched while proving continuous refresh; cleaned up afterwards |
 | 2026-10-20 | Cloud dashboard assertions are **invariant-based** | hardcoded 3277/3018/60/1055 | Workflow inputs (`duration`, `rate`, `seed`) are configurable; the contract test asserts accounting identities and shapes instead |
 | 2026-10-20 | Visual verification via browser DOM + API/logs | screenshot | Browser screenshots were unavailable in the build environment (no visible desktop window); DOM evaluation confirmed Live status, KPIs, chart element counts and zero console errors |
+| 2026-10-21 | Dashboard becomes **its own page** (`docs/dashboard.html`), one file for both hosts | keep it inside the showcase page; two separate pages | A static site cannot poll a live API, so the published copy must show a *captured* snapshot. One file + a deploy marker means the live view and the published page cannot drift, and the page always states which mode it is in (no sample data, no "fake live") |
+| 2026-10-21 | Deployment detection via `<meta name="p2-deploy">` marker rewritten by the server | probe `/api/metrics` and treat 404 as "static" | Probing produces a console error on every static load and makes the page guess; the marker makes it deterministic and keeps the console clean |
+| 2026-10-21 | Site redesign with a shared design system + self-hosted fonts | framework (React/Tailwind), CDN fonts, template look | The project is judged on craft and self-containment. Plain HTML/CSS with Bricolage Grotesque + IBM Plex (latin subset, committed) keeps it offline-capable, framework-free and build-step-free. "Control room" aesthetic suits an instrument panel for a running pipeline |
+| 2026-10-21 | `.dockerignore` for `lakehouse/`, `checkpoints/`, `.ivy2/` | leave the context as it was | Those are runtime volumes, not image content; excluding them shrinks and speeds every build and stops local data from entering the build context |
 
 ## Environment Facts
 
@@ -277,6 +303,10 @@ Isolated live run (canonical tables untouched):
 ### Stack / UI
 - Redpanda topic `order-events`: 3 partitions, 1 replica.
 - Console reachable at http://localhost:8080 (HTTP 200), connected to Kafka.
+- Site: `docs/index.html` (showcase) + `docs/dashboard.html` (dashboard page),
+  shared design system `docs/assets/site.css` + `docs/assets/dashboard.css`,
+  self-hosted fonts `docs/assets/fonts/` (4 woff2 files, 167 KB).
+- Published: `/` (showcase) and `/dashboard.html` (dashboard, snapshot mode).
 
 ## Open Questions
 
@@ -292,8 +322,10 @@ Isolated live run (canonical tables untouched):
 - [x] docs/RUNBOOK.md
 - [x] docs/CLOUD_DEMO.md
 - [x] docs/index.html (includes "Run it in the cloud" + live dashboard sections)
+- [x] docs/dashboard.html (dashboard as its own page: live locally, published snapshot on Pages)
+- [x] docs/assets/site.css + dashboard.css + fonts (shared design system, no CDN)
 - [x] .github/workflows/demo-run.yml (dashboard metrics + API contract)
-- [x] CHANGELOG.md (Unreleased section current through Phase 9)
+- [x] CHANGELOG.md (Unreleased section current through Phase 10)
 - [x] LICENSE (MIT) added
 - [x] PROJECT_MEMORY.md (current)
 - [x] docs/assets/dashboard_live_* + dashboard_canonical_metrics.json
@@ -310,7 +342,7 @@ Isolated live run (canonical tables untouched):
 >
 > Dashboard pass (2026-10-20): added `docs/DASHBOARD.md`, `tests/verify_dashboard_metrics.py`,
 > the Compose `dashboard` profile, live-run evidence, and cloud API verification.
-> README, ARCHITECTURE, CONCEPTS (23 Q&A), RUNBOOK, CLOUD_DEMO, CHANGELOG,
+> README, ARCHITECTURE, CONCEPTS (25 Q&A), RUNBOOK, CLOUD_DEMO, CHANGELOG,
 > docs/index.html and this file were updated from the actual live run and
 > `--metrics-only` canonical snapshot. Numbers in this file match
 > `docs/assets/dashboard_live_metrics.json` and

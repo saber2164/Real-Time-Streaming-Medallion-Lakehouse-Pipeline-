@@ -183,12 +183,36 @@ SILVER ──(every 10 s)──► spark/gold_refresh.py ──► GOLD (overwri
   existing Gold table and writes only metrics, preserving `OPTIMIZE`/ZORDER.
 - `dashboard/server.py` has no Spark/Delta/database dependency and no
   third-party Python packages. Endpoints: `GET /`, `GET /api/metrics`,
-  `GET /healthz`. It serves the last snapshot only.
+  `GET /healthz`, `GET /assets/*` (fonts + CSS). It serves the last snapshot
+  only.
 - The `dashboard` container mounts `./lakehouse` **read-only** and binds
   `127.0.0.1:8501`; the `gold-refresh` service uses the `dashboard` Compose
   profile. Default `docker-compose up -d` does not start either service.
 - If Silver/Gold is missing, the refresher writes an explicit `waiting`
   payload; the UI shows a waiting state and never sample data.
+
+### One page, two hosts
+
+`docs/dashboard.html` is the dashboard page in **both** deployments:
+
+| Host | How it is served | Mode |
+|------|------------------|------|
+| GitHub Pages | `docs/` is the site root → `/dashboard.html` | **Published snapshot** — loads `assets/dashboard_live_metrics.json`, banner explains that live numbers need the local stack |
+| Local container | copied to `/app/index.html` and served by `dashboard/server.py` | **Live** — polls `/api/metrics` every 3 s |
+
+The server rewrites one marker in the HTML it serves
+(`<meta name="p2-deploy" content="static">` → `"live"`), so the page knows
+which mode it is in without probing a URL that does not exist. The published
+page is therefore the same code as the live page and cannot drift.
+
+### Web tier and the site
+
+- The showcase site (`docs/index.html`) and the dashboard page share the design
+  system in `docs/assets/site.css` (tokens, typography, panels, data sheet) and
+  the self-hosted fonts in `docs/assets/fonts/`. No CDN, no build step, no
+  framework.
+- `.dockerignore` keeps `lakehouse/`, `checkpoints/` and `.ivy2/` out of the
+  Docker build context, so image builds do not ship local state.
 
 Full contract, verified numbers and limits: [`DASHBOARD.md`](DASHBOARD.md).
 
@@ -212,7 +236,7 @@ Full contract, verified numbers and limits: [`DASHBOARD.md`](DASHBOARD.md).
 | `spark` | build `Dockerfile.spark` (pyspark 3.5.3 + delta-spark 3.2.0, JDK 21) | runs ingestion + gold + tests; mounts `./lakehouse`, `./checkpoints`, `./spark`, `./scripts`, `./tests`, `./.ivy2` |
 | `producer` | build `./producer` (confluent-kafka) | optional profile; synthetic load |
 | `gold-refresh` | `spark` image | profile `dashboard`; continuous Gold recompute + `metrics.json` |
-| `dashboard` | build `./dashboard` (python:3.11-slim) | profile `dashboard`; read-only HTTP/JSON serving on `127.0.0.1:8501` |
+| `dashboard` | build `dashboard/Dockerfile` (python:3.11-slim, repo-root context) | profile `dashboard`; read-only HTTP/JSON serving on `127.0.0.1:8501`; ships `docs/dashboard.html` + assets |
 
 `spark` and `producer` use `depends_on` with `service_healthy` (redpanda) and
 `service_completed_successfully` (topic-init). `gold-refresh` starts before

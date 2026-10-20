@@ -156,6 +156,10 @@ CI deliberately does **not** start the continuous `gold-refresh` service: a
 finite workflow should not leave a long-lived process behind. `--once` proves
 the same JSON contract. See [`DASHBOARD.md`](DASHBOARD.md) for the full design.
 
+The container serves the **same page** that GitHub Pages publishes
+(`docs/dashboard.html`): the workflow rewrites the deploy marker to `live`, so
+`/api/metrics` is polled exactly as it is on a laptop.
+
 ---
 
 ## Reproducibility

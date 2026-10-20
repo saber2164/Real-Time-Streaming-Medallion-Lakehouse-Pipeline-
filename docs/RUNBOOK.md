@@ -101,6 +101,12 @@ scripts/live_dashboard.sh
 scripts/stop_live_dashboard.sh
 ```
 
+The dashboard is also a page of the published site: `docs/dashboard.html` →
+`https://saber2164.github.io/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/dashboard.html`.
+Same file, two hosts: the published copy shows the committed snapshot with a
+**Published snapshot** badge, the container rewrites one deploy marker so the
+local copy shows live numbers.
+
 > This appends to the real `./lakehouse` and `./checkpoints` tables. Run the reset
 > in §8 first if you want the canonical counts to stay exactly 3277/3018/60.
 
@@ -203,6 +209,7 @@ python3 tests/test_producer_logic.py     # 5/5 pass
 | Silver has rows that look duplicated after a late duplicate | watermark window vs producer's 2-15 min delay | expected within the window; see the late-data analysis in `CONCEPTS_AND_DESIGN_DECISIONS.md` |
 | Streaming job stops before draining the topic | idle supervisor saw a constant per-batch row count (pre-fix) | fixed: `_total_input_rows()` is now monotonic/cumulative |
 | Dashboard says **Waiting for data** | Silver/Gold not created yet, or refresher not started | start `stream_ingestion.py`; then `docker-compose --profile dashboard up -d gold-refresh dashboard`; check `docker logs p2-gold-refresh-1` |
+| Dashboard shows **Published snapshot** | you opened the GitHub Pages copy, not the local server | use `http://localhost:8501`; the container rewrites the deploy marker to `live` |
 | Dashboard says **Stale snapshot** | refresher stopped or snapshot older than the threshold | restart `gold-refresh`; check its logs; verify `lakehouse/dashboard/metrics.json` mtime |
 | Dashboard healthy but KPIs empty | `METRICS_PATH` mismatch between refresher and server | both default to `/lakehouse/dashboard/metrics.json`; don't override one side only |
 | Port 8501 already in use | an old dashboard container or host process | `docker ps`; stop it or change the Compose port mapping |

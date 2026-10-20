@@ -76,6 +76,12 @@ sellers, payment mix, events per minute, revenue by hour, duplicates removed,
 watermark/lateness and pipeline health. The page polls the API every **3
 seconds** and never displays sample data.
 
+The dashboard is also a **separate page of the published site**
+([`docs/dashboard.html`](docs/dashboard.html) → `/dashboard.html` on GitHub
+Pages). Both are the *same file*: on Pages it shows the committed snapshot with
+a **Published snapshot** badge, and the container rewrites one deploy marker so
+the local copy shows live numbers instead.
+
 ```bash
 scripts/live_dashboard.sh          # Redpanda + stream + refresher + dashboard + producer
 # open http://localhost:8501
@@ -86,7 +92,10 @@ scripts/stop_live_dashboard.sh
 `metrics.json`, and `dashboard/server.py` serves it with the Python standard
 library only. `spark/gold_logic.py` is shared with the batch
 `gold_compaction.py`, so the live view cannot drift from the batch Gold table.
-The dashboard container mounts `./lakehouse` **read-only**.
+The dashboard container mounts `./lakehouse` **read-only**. The UI and the
+showcase site share one design system (`docs/assets/site.css`): self-hosted
+Bricolage Grotesque / IBM Plex Sans / IBM Plex Mono, one signal-amber accent,
+inline SVG charts, no CDN and no third-party runtime.
 
 Measured in an **isolated** live run (topic `order-events-dashboard`, separate
 paths, stream started before the producer; `numRowsDroppedByWatermark = 0`):
@@ -258,15 +267,15 @@ with operation metrics for Bronze, Silver, and Gold.
 ## Project layout
 
 ```
-docker-compose.yml · Dockerfile.spark · console.yaml
+docker-compose.yml · Dockerfile.spark · console.yaml · .dockerignore
 producer/   event_producer.py · requirements.txt · Dockerfile
 spark/      config.py · stream_ingestion.py · gold_logic.py · gold_compaction.py · gold_refresh.py
-dashboard/  server.py · index.html · Dockerfile
+dashboard/  server.py · Dockerfile
 tests/      test_producer_logic.py · verify_silver_dedup.py · verify_bronze_offsets.py
             verify_gold.py · verify_dashboard_metrics.py · verify_recovery.sh
 scripts/    inspect_delta.py · watermark_report.py · live_dashboard.sh · stop_live_dashboard.sh
 docs/       ARCHITECTURE.md · CONCEPTS_AND_DESIGN_DECISIONS.md · DASHBOARD.md · RUNBOOK.md
-            CLOUD_DEMO.md · index.html · assets/
+            CLOUD_DEMO.md · index.html · dashboard.html · assets/
 PROJECT_MEMORY.md · CHANGELOG.md · README.md · LICENSE
 ```
 
@@ -290,6 +299,7 @@ Highlights:
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — run / verify / inspect / recover / reset
 - [`docs/CLOUD_DEMO.md`](docs/CLOUD_DEMO.md) — run on GitHub Actions (free) + how the trigger works
 - [`docs/index.html`](docs/index.html) — showcase web page (GitHub Pages)
+- [`docs/dashboard.html`](docs/dashboard.html) — the dashboard as its own page (live locally, published snapshot on Pages)
 - [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md) — live status, decisions, measured results, bugs
 
 ## License

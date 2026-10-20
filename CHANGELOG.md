@@ -8,12 +8,25 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
 ## [Unreleased]
 
 ### Added
+- **The dashboard is now its own page** of the site: `docs/dashboard.html`
+  (published at `/dashboard.html` on GitHub Pages). The published copy shows
+  the committed snapshot with a **Published snapshot** badge; the container
+  serves the *same file* with a rewritten deploy marker, so it polls
+  `/api/metrics` and shows live numbers.
+- **Site redesign ("control room")**: a shared design system in
+  `docs/assets/site.css` (graphite ground, blueprint grid, hairline rules,
+  drafting corner ticks, one signal-amber accent) plus self-hosted webfonts
+  (Bricolage Grotesque / IBM Plex Sans / IBM Plex Mono, latin subset) in
+  `docs/assets/fonts/`. No CDN, no framework, no build step.
+- `docs/assets/dashboard.css`: chart and readout styles for the dashboard page.
+- `.dockerignore`: keeps `lakehouse/`, `checkpoints/` and `.ivy2/` out of the
+  Docker build context (smaller, faster, no local state in image builds).
 - **Live stakeholder dashboard** on `http://localhost:8501`: KPI cards, events/min,
   payment-mix donut, top-10 sellers, revenue by hour, and a pipeline-health strip;
   3-second polling, light/dark theme, explicit waiting/stale states, no sample data.
 - `dashboard/server.py` (stdlib-only read-only HTTP server: `/`, `/api/metrics`,
-  `/healthz`), `dashboard/index.html` (self-contained UI + inline SVG charts), and
-  `dashboard/Dockerfile` (no third-party Python packages).
+  `/healthz`, `/assets/*`), `docs/dashboard.html` (the shared UI + inline SVG
+  charts), and `dashboard/Dockerfile` (no third-party Python packages).
 - `spark/gold_refresh.py`: continuous/one-shot Gold refresher and atomic
   `metrics.json` exporter. `--once --metrics-only` reads the existing Gold table
   without rewriting it (preserves `OPTIMIZE`/ZORDER for CI).
@@ -36,9 +49,9 @@ and this project adheres to [Conventional Commits](https://www.conventionalcommi
   the max is only a safety backstop.
 - `docs/ARCHITECTURE.md`: layered architecture, data contracts, Bronze/Silver/Gold
   grain, streaming topology, recovery model.
-- `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 23 design
+- `docs/CONCEPTS_AND_DESIGN_DECISIONS.md`: plain-language concepts plus 25 design
   Q&A (watermarks, dedup, read-from-Delta, Gold overwrite, Z-order, recovery,
-  serving layer/dashboard).
+  serving layer/dashboard, one page two hosts).
 - `docs/RUNBOOK.md`: bring-up, measured run order, verification, teardown, troubleshooting.
 - `docs/index.html`: self-contained showcase page (light/dark, inline SVG, OpenGraph).
 - `LICENSE` (MIT).
