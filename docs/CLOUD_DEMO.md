@@ -18,8 +18,9 @@ ephemeral Linux VM where we can:
 4. run the streaming job (bounded — it drains the topic and stops itself),
 5. produce events,
 6. build Gold and compact with `OPTIMIZE`/`Z-ORDER`,
-7. run the same verification scripts as locally, and
-8. upload the evidence as build artifacts.
+7. generate a read-only dashboard snapshot and verify the dashboard API,
+8. run the same verification scripts as locally, and
+9. upload the evidence as build artifacts.
 
 The workflow lives at **`.github/workflows/demo-run.yml`**.
 
@@ -37,7 +38,7 @@ The workflow lives at **`.github/workflows/demo-run.yml`**.
    [ GitHub Actions runner (ubuntu-latest) ]
               │  docker compose up
               ▼
-   [ Redpanda → Spark (Bronze→Silver→Gold) → verify ] → run summary + artifacts
+   [ Redpanda → Spark (Bronze→Silver→Gold) → verify → dashboard API ] → run summary + artifacts
 ```
 
 Two constraints force this design:
@@ -113,6 +114,47 @@ local flow had hidden:
 Both are covered by the verification suite: `tests/verify_silver_dedup.py` now
 also asserts that Silver retains **every** distinct Bronze key, which is what
 catches silent late-data loss.
+
+---
+
+## Dashboard verification in CI
+
+After Gold compaction, the workflow produces a dashboard snapshot and verifies
+the HTTP API, so the serving layer is tested on every cloud run:
+
+```bash
+# Read the compacted Gold table; write only metrics.json.
+# Do NOT use a normal --once here: it would overwrite Gold and undo OPTIMIZE/ZORDER.
+docker compose run --rm -T --no-deps spark spark-submit \
+  --packages io.delta:delta-spark_2.12:3.2.0 \
+  /opt/spark/app/gold_refresh.py --once --metrics-only
+
+docker compose --profile dashboard build dashboard
+docker compose --profile dashboard up -d dashboard
+curl -sf http://127.0.0.1:8501/healthz
+curl -sf http://127.0.0.1:8501/api/metrics > dashboard_metrics.json
+python3 tests/verify_dashboard_metrics.py dashboard_metrics.json
+```
+
+The contract test is **invariant-based**, not tied to canonical counts: it
+asserts the accounting identity
+(`bronze_rows = silver_rows + duplicates_removed + quarantine_rows`), that the
+payment/hour breakdowns sum to the KPIs, that the top-seller list is sorted and
+capped at 10, and that lateness is ordered `avg ≤ p95 ≤ max`. That keeps the
+workflow meaningful when `duration`, `rate`, or `seed` change.
+
+Artifacts uploaded by the run:
+
+| Artifact | Content |
+|----------|---------|
+| `dashboard_refresh.txt` | `Mode:`, `REFRESH` and `One-shot` log lines |
+| `dashboard_metrics.json` | exact `/api/metrics` payload |
+| `dashboard_health.json` | `/healthz` response |
+| `verify_dashboard_metrics.txt` | contract + KPI output |
+
+CI deliberately does **not** start the continuous `gold-refresh` service: a
+finite workflow should not leave a long-lived process behind. `--once` proves
+the same JSON contract. See [`DASHBOARD.md`](DASHBOARD.md) for the full design.
 
 ---
 

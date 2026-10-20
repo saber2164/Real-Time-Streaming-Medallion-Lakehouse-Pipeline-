@@ -128,6 +128,32 @@ jobs:
             --packages io.delta:delta-spark_2.12:3.2.0 \
             /opt/spark/tests/verify_gold.py 2>&1 | tee verify_gold.txt
 
+      - name: Generate dashboard metrics (read-only)
+        run: |
+          set -o pipefail
+          # --metrics-only reads the compacted Gold table; it must not rewrite
+          # Gold, otherwise it would undo OPTIMIZE/ZORDER from the step above.
+          docker compose run --rm -T --no-deps spark spark-submit \
+            --packages io.delta:delta-spark_2.12:3.2.0 \
+            /opt/spark/app/gold_refresh.py --once --metrics-only \
+            2>&1 | tee dashboard_refresh.txt
+
+      - name: Build and verify dashboard API
+        run: |
+          set -o pipefail
+          docker compose --profile dashboard build dashboard
+          docker compose --profile dashboard up -d dashboard
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8501/healthz >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8501/healthz | tee dashboard_health.json
+          curl -sf http://127.0.0.1:8501/api/metrics > dashboard_metrics.json
+          # Contract + accounting identity (no hardcoded canonical counts, so
+          # workflow inputs stay configurable).
+          python3 tests/verify_dashboard_metrics.py dashboard_metrics.json \
+            2>&1 | tee verify_dashboard_metrics.txt
+
       - name: Publish summary
         if: always()
         run: |
@@ -144,6 +170,18 @@ jobs:
                 echo '```'
               fi
             done
+            if [ -f dashboard_refresh.txt ]; then
+              echo "### Dashboard metrics refresh"
+              echo '```'
+              grep -E 'Mode:|REFRESH|One-shot|ERROR' dashboard_refresh.txt | tail -10 || tail -10 dashboard_refresh.txt
+              echo '```'
+            fi
+            if [ -f verify_dashboard_metrics.txt ]; then
+              echo "### Dashboard contract + KPIs"
+              echo '```'
+              cat verify_dashboard_metrics.txt
+              echo '```'
+            fi
             if [ -f gold_run.txt ]; then
               echo "### gold_run.txt (OPTIMIZE highlights)"
               echo '```'
@@ -160,8 +198,11 @@ jobs:
           path: |
             gold_run.txt
             verify_*.txt
+            dashboard_refresh.txt
+            dashboard_metrics.json
+            dashboard_health.json
           if-no-files-found: warn
 
       - name: Tear down stack
         if: always()
-        run: docker compose --profile producer down -v --remove-orphans || true
+        run: docker compose --profile producer --profile dashboard down -v --remove-orphans || true
