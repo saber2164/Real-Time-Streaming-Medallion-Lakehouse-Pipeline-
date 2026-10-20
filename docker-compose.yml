@@ -179,8 +179,10 @@ services:
   ###############################################################################
   dashboard:
     build:
-      context: ./dashboard
-      dockerfile: Dockerfile
+      # Repo-root context: the image ships docs/dashboard.html (the same page
+      # GitHub Pages publishes) plus its fonts and stylesheets.
+      context: .
+      dockerfile: dashboard/Dockerfile
     environment:
       - METRICS_PATH=/lakehouse/dashboard/metrics.json
       - PORT=8501

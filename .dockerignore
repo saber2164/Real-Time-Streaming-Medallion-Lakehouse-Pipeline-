@@ -1,0 +1,11 @@
+# Keep the Docker build context small and free of local state.
+# The lakehouse, checkpoints and the Ivy cache are runtime volumes, not image
+# content — sending them to the daemon slowed every build down.
+.git
+.ivy2
+lakehouse
+checkpoints
+**/__pycache__
+**/*.py[co]
+*.log
+.DS_Store

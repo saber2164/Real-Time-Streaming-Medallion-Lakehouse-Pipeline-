@@ -1,10 +1,17 @@
 # dashboard/Dockerfile
 # Read-only stakeholder dashboard. No third-party Python packages: the image is
-# just Python 3.11 + two files. This keeps startup fast and the supply chain tiny.
+# just Python 3.11 + the shared page + its assets. Startup is instant and the
+# supply chain stays tiny.
+#
+# Build context is the repository root, because the page is the *same* file
+# that GitHub Pages publishes (docs/dashboard.html) — one source of truth for
+# the local live view and the published snapshot.
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY server.py index.html ./
+COPY dashboard/server.py ./server.py
+COPY docs/dashboard.html ./index.html
+COPY docs/assets ./assets
 
 ENV PYTHONUNBUFFERED=1 \
     PORT=8501 \

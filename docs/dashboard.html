@@ -1,179 +1,88 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="night">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Live Order Revenue — Medallion Lakehouse Dashboard</title>
-<meta name="description" content="Live stakeholder dashboard for the Redpanda → PySpark Structured Streaming → Delta Lake Medallion pipeline. Gold-layer revenue, orders, sellers and pipeline health, refreshed from a real Delta lakehouse." />
-<meta name="color-scheme" content="light dark" />
-<style>
-  :root {
-    --bg: #f7f8fa; --surface: #ffffff; --surface-2: #eef1f5;
-    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
-    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
-    --amber: #b45309; --red: #b42318;
-    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
-    --radius: 16px; --maxw: 1180px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
-      --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
-      --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
-      --amber: #fbbf24; --red: #f87171;
-      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
-    }
-  }
-  :root[data-theme="light"] {
-    --bg: #f7f8fa; --surface: #fff; --surface-2: #eef1f5;
-    --text: #14181f; --muted: #55606e; --border: #dbe1e8;
-    --accent: #e2401b; --accent-2: #0b6bcb; --accent-3: #0f9d63;
-    --amber: #b45309; --red: #b42318;
-    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
-  }
-  :root[data-theme="dark"] {
-    --bg: #0b0f14; --surface: #131a22; --surface-2: #1b232e;
-    --text: #e9eef5; --muted: #9aa7b6; --border: #253040;
-    --accent: #ff6a45; --accent-2: #62b0ff; --accent-3: #4ad19a;
-    --amber: #fbbf24; --red: #f87171;
-    --shadow: 0 1px 3px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
-  header {
-    border-bottom: 1px solid var(--border);
-    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 9%, var(--surface)), var(--surface) 62%);
-    padding: 26px 0 22px;
-  }
-  .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-  .eyebrow { font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
-  h1 { font-size: clamp(1.45rem, 3.4vw, 2.15rem); line-height: 1.1; margin: 6px 0 6px; letter-spacing: -.02em; }
-  .sub { color: var(--muted); margin: 0; font-size: .95rem; }
-  .flow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; align-items: center; }
-  .flow span { font-size: .76rem; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; }
-  .flow .arrow { background: none; border: 0; padding: 0 1px; }
-  .status-box { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 190px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px;
-    font-size: .82rem; font-weight: 700; border: 1px solid var(--border); background: var(--surface);
-    box-shadow: var(--shadow);
-  }
-  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
-  .pill.live { color: var(--accent-3); border-color: color-mix(in srgb, var(--accent-3) 45%, var(--border)); }
-  .pill.live .dot { background: var(--accent-3); animation: pulse 1.8s ease-in-out infinite; }
-  .pill.stale { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
-  .pill.stale .dot { background: var(--amber); }
-  .pill.waiting { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent-2) 45%, var(--border)); }
-  .pill.waiting .dot { background: var(--accent-2); }
-  .pill.error { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
-  .pill.error .dot { background: var(--red); }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-  .updated { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-  .controls { display: flex; gap: 8px; align-items: center; }
-  button {
-    font: inherit; font-size: .78rem; font-weight: 600; color: var(--text); background: var(--surface);
-    border: 1px solid var(--border); border-radius: 9px; padding: 6px 11px; cursor: pointer;
-    box-shadow: var(--shadow);
-  }
-  button:hover { border-color: var(--accent-2); }
-  button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-  main { padding: 24px 0 44px; }
-  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 16px; box-shadow: var(--shadow); min-width: 0; }
-  .kpi .label { font-size: .73rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
-  .kpi .value { font-size: clamp(1.25rem, 2.2vw, 1.72rem); font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .kpi .foot { font-size: .76rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 18px; box-shadow: var(--shadow); min-width: 0; }
-  .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-12 { grid-column: span 12; }
-  h2 { font-size: 1rem; margin: 0 0 3px; letter-spacing: -.01em; }
-  .card .hint { color: var(--muted); font-size: .78rem; margin: 0 0 10px; }
-  .chart { width: 100%; min-height: 210px; }
-  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-  .empty { color: var(--muted); font-size: .88rem; padding: 48px 8px; text-align: center; margin: 0; }
-  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: .78rem; color: var(--muted); }
-  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
-  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
-  .donut-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .donut-wrap svg { width: 190px; height: 190px; flex: 0 0 auto; }
-  .donut-legend { flex: 1 1 150px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .donut-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; font-size: .8rem; }
-  .donut-row .swatch { width: 10px; height: 10px; border-radius: 3px; }
-  .donut-row .name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .donut-row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .bars { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
-  .bar-row { display: grid; grid-template-columns: 92px 1fr 86px; gap: 10px; align-items: center; }
-  .bar-label { font-size: .78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .bar-track { height: 16px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--surface))); transition: width .35s ease; }
-  .bar-value { font-size: .78rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-  .pipe { margin-top: 14px; }
-  .pipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 8px; }
-  .pipe-item { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; min-width: 0; }
-  .pipe-item .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-  .pipe-item .v { font-size: .98rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .note { color: var(--muted); font-size: .8rem; border-left: 3px solid var(--accent-2); background: var(--surface-2); border-radius: 8px; padding: 10px 13px; margin: 14px 0 0; }
-  .note code { background: color-mix(in srgb, var(--surface) 70%, transparent); padding: 1px 5px; border-radius: 5px; }
-  footer { border-top: 1px solid var(--border); padding: 18px 0 34px; color: var(--muted); font-size: .78rem; }
-  footer .wrap { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-  .theme { position: fixed; top: 12px; right: 12px; z-index: 10; }
-  .skip { position: absolute; left: -999px; } .skip:focus { left: 12px; top: 12px; background: var(--surface); padding: 8px 12px; border-radius: 8px; z-index: 30; }
-  @media (max-width: 1000px) {
-    .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .span-7, .span-5 { grid-column: span 12; }
-  }
-  @media (max-width: 560px) {
-    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .bar-row { grid-template-columns: 76px 1fr 74px; }
-    .status-box { align-items: flex-start; }
-    .updated { text-align: left; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    .pill.live .dot { animation: none; }
-    .bar-fill { transition: none; }
-  }
-</style>
+<title>Live dashboard · Medallion Lakehouse</title>
+<meta name="description" content="Read-only stakeholder view of the Gold layer of the Redpanda → PySpark → Delta Lake pipeline: revenue, orders, top sellers, payment mix, duplicates removed and pipeline health." />
+<meta name="author" content="Harshit Thakkar" />
+<meta name="p2-deploy" content="static" />
+<meta name="color-scheme" content="dark light" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Live dashboard · Medallion Lakehouse" />
+<meta property="og:description" content="Gold-layer KPIs, charts and pipeline health, refreshed from a real Delta lakehouse. No sample data." />
+<meta property="og:site_name" content="Medallion Lakehouse Pipeline" />
+<link rel="preload" href="assets/fonts/bricolage-grotesque-400_800.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="assets/fonts/ibm-plex-mono-500.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="assets/fonts/fonts.css" />
+<link rel="stylesheet" href="assets/site.css" />
+<link rel="stylesheet" href="assets/dashboard.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0e13'/%3E%3Cpath d='M7 22V10h4l5 8v-8h4v12h-4l-5-8v8z' fill='%23f2a93b'/%3E%3C/svg%3E" />
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<button class="theme" id="themeToggle" aria-label="Toggle colour theme">◐</button>
 
-<header>
-  <div class="wrap header-row">
-    <div>
-      <div class="eyebrow">Medallion lakehouse · Gold layer</div>
-      <h1>Live order revenue</h1>
-      <p class="sub">Stakeholder view of the streaming pipeline — numbers read from the Gold Delta table.</p>
-      <div class="flow" aria-label="Pipeline flow">
-        <span>Redpanda</span><span class="arrow">→</span>
-        <span>Bronze</span><span class="arrow">→</span>
-        <span>Silver · dedup</span><span class="arrow">→</span>
-        <span>Gold · hourly</span><span class="arrow">→</span>
-        <span>/api/metrics</span>
-      </div>
-    </div>
-    <div class="status-box">
-      <span class="pill waiting" id="statusPill" role="status" aria-live="polite">
-        <span class="dot" aria-hidden="true"></span><span id="statusText">Connecting…</span>
-      </span>
-      <div class="updated" id="updated">Waiting for the first snapshot</div>
-      <div class="controls">
-        <button id="pauseBtn" aria-pressed="false">Pause</button>
-        <button id="refreshBtn">Refresh now</button>
-      </div>
-    </div>
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="index.html"><b>P2</b> <span>/</span> MEDALLION LAKEHOUSE</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Overview</a>
+      <a href="dashboard.html" aria-current="page">Dashboard</a>
+      <a href="ARCHITECTURE.md">Architecture</a>
+      <a href="RUNBOOK.md">Runbook</a>
+      <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch colour theme">◐ Theme</button>
+    </nav>
   </div>
 </header>
 
 <main id="main" class="wrap">
 
+  <!-- ================================================================ header -->
+  <section class="dash-head">
+    <div class="hero-grid" style="display:grid;gap:clamp(1.6rem,4vw,3rem);grid-template-columns:minmax(0,1fr)">
+      <div>
+        <p class="eyebrow">Medallion lakehouse · Gold layer</p>
+        <h1>Live order revenue</h1>
+        <p class="sub">
+          A read-only stakeholder view of the streaming pipeline. Every number is read from the
+          Gold Delta table — the dashboard never queries Kafka and never re-implements the
+          business logic.
+        </p>
+        <div class="dash-flow" aria-label="Pipeline flow">
+          <span>Redpanda</span><span class="arrow">→</span>
+          <span>Bronze</span><span class="arrow">→</span>
+          <span>Silver · dedup</span><span class="arrow">→</span>
+          <span>Gold · hourly</span><span class="arrow">→</span>
+          <span>/api/metrics</span><span class="arrow">→</span>
+          <span>this page</span>
+        </div>
+      </div>
+
+      <div class="dash-status">
+        <span class="pill waiting" id="statusPill" role="status" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span><span id="statusText">Connecting…</span>
+        </span>
+        <div class="updated" id="updated">Waiting for the first snapshot</div>
+        <div class="controls">
+          <button id="pauseBtn" type="button" aria-pressed="false">Pause</button>
+          <button id="refreshBtn" type="button">Refresh now</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="snapshot-banner" id="snapshotBanner" hidden>
+      <span class="pill snapshot"><span class="dot" aria-hidden="true"></span>Published snapshot</span>
+      <p>
+        <strong>Static capture</strong> — this page is published on GitHub Pages, so it shows the
+        committed snapshot instead of a live feed. Run the stack locally for live numbers:
+        <code>bash scripts/live_dashboard.sh</code> then open
+        <code>http://localhost:8501</code>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================================== KPIs -->
   <section class="kpis" aria-label="Key metrics">
     <div class="kpi" data-kpi="revenue">
       <div class="label">Product revenue</div>
@@ -207,14 +116,15 @@
     </div>
   </section>
 
-  <section class="grid" aria-label="Charts">
+  <!-- =============================================================== charts -->
+  <section class="dash-grid" aria-label="Charts">
     <div class="card span-7">
       <h2>Events arriving per minute</h2>
       <p class="hint">Broker timestamp, all event types. The lower line counts <code>order_created</code> only.</p>
       <div class="chart" id="eventsChart" role="img" aria-label="Events arriving per minute"></div>
       <div class="legend">
-        <span class="key"><span class="swatch" style="background:var(--accent-2)"></span>All events</span>
-        <span class="key"><span class="swatch" style="background:var(--accent)"></span>Orders created</span>
+        <span class="key"><span class="swatch" style="background:var(--data)"></span>All events</span>
+        <span class="key"><span class="swatch" style="background:var(--signal)"></span>Orders created</span>
       </div>
     </div>
 
@@ -237,23 +147,25 @@
     </div>
   </section>
 
-  <section class="card pipe" aria-label="Pipeline health">
+  <!-- ======================================================= pipeline health -->
+  <section class="card" aria-label="Pipeline health">
     <h2>Pipeline health</h2>
     <p class="hint">Counts across the Medallion layers and the streaming guarantees in force.</p>
     <div class="pipe-grid" id="pipeline"></div>
-    <p class="note" id="pipelineNote">Waiting for the first metrics snapshot.</p>
+    <p class="dash-note" id="pipelineNote" style="margin-top:1rem">Waiting for the first metrics snapshot.</p>
   </section>
 
-  <p class="note">
-    This page polls <code>/api/metrics</code> every 3 s. <code>gold_refresh.py</code> recomputes Gold
-    from the Silver Delta table every 10 s and atomically replaces the JSON snapshot. Values are
-    read-only and come from real tables — there is no sample or placeholder data. The dashboard
-    does not read Kafka or Delta directly, so it can never disagree with the Gold job's logic.
+  <p class="dash-note">
+    In live mode this page polls <code>/api/metrics</code> every 3 s.
+    <code>gold_refresh.py</code> recomputes Gold from the Silver Delta table every 10 s and
+    atomically replaces the JSON snapshot. Values are read-only and come from real tables —
+    there is no sample or placeholder data, and the dashboard never touches Kafka or Delta
+    directly, so it cannot disagree with the Gold job's logic.
   </p>
 </main>
 
-<footer>
-  <div class="wrap">
+<footer class="footer">
+  <div class="wrap footer-in">
     <span>Redpanda · PySpark Structured Streaming · Delta Lake — 100% local, MIT.</span>
     <span id="sourceLine">Source: Gold Delta table → metrics.json</span>
   </div>
@@ -264,7 +176,13 @@
   "use strict";
 
   var REFRESH_MS = 3000;
-  var state = { paused: false, last: null, lastOkAt: null, lastError: null };
+  var SNAPSHOT_MS = 30000;
+  var SNAPSHOT_URL = "assets/dashboard_live_metrics.json";
+  // The container rewrites this marker to "live" when it serves the page, so
+  // the page knows whether /api/metrics exists without probing a dead URL.
+  var DEPLOY = (document.querySelector('meta[name="p2-deploy"]') || {}).content || "static";
+  var IS_LIVE = DEPLOY === "live";
+  var state = { paused: false, last: null, lastOkAt: null, lastError: null, mode: IS_LIVE ? "live" : "snapshot", timer: null };
 
   function $(id) { return document.getElementById(id); }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
@@ -331,6 +249,45 @@
     if (title) node.title = title;
   }
 
+  // ------------------------------------------------------------- data source
+  // Live mode: the container serves this page and replaces the deploy marker
+  // with "live"; the numbers come from /api/metrics.
+  // Static mode: this page is published on GitHub Pages, where the only
+  // honest thing to show is the committed snapshot — clearly labelled.
+  async function loadPayload() {
+    if (IS_LIVE) {
+      try {
+        var res = await fetch("/api/metrics", { cache: "no-store" });
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.schema_version) {
+            state.mode = "live";
+            return data;
+          }
+        }
+      } catch (err) {
+        state.lastError = err;
+      }
+      state.mode = "live";
+      return null;
+    }
+
+    try {
+      var snap = await fetch(SNAPSHOT_URL, { cache: "no-cache" });
+      if (snap.ok) {
+        var data2 = await snap.json();
+        if (data2 && data2.schema_version) {
+          state.mode = "snapshot";
+          return data2;
+        }
+      }
+    } catch (err) {
+      state.lastError = err;
+    }
+    state.mode = "snapshot";
+    return null;
+  }
+
   // ---------------------------------------------------------------- KPIs
   function renderKpis(data) {
     var k = (data && data.kpis) || {};
@@ -369,8 +326,8 @@
 
     for (var g = 0; g <= 4; g++) {
       var gy = P.t + ih - (g / 4) * ih;
-      root.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--border)", "stroke-width": 1 }));
-      root.appendChild(svgText(P.l - 8, gy + 4, num(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--muted)", "font-size": 10 }));
+      root.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--line)", "stroke-width": 1 }));
+      root.appendChild(svgText(P.l - 8, gy + 4, num(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--fg-dim)", "font-size": 10 }));
     }
 
     function linePath(key) {
@@ -378,13 +335,13 @@
     }
 
     var area = linePath("events") + " L" + x(points.length - 1).toFixed(1) + "," + (P.t + ih) + " L" + x(0).toFixed(1) + "," + (P.t + ih) + " Z";
-    root.appendChild(svgEl("path", { d: area, fill: "var(--accent-2)", opacity: 0.12 }));
-    root.appendChild(svgEl("path", { d: linePath("events"), fill: "none", stroke: "var(--accent-2)", "stroke-width": 2.4, "stroke-linejoin": "round" }));
-    root.appendChild(svgEl("path", { d: linePath("orders"), fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
+    root.appendChild(svgEl("path", { d: area, fill: "var(--data)", opacity: 0.14 }));
+    root.appendChild(svgEl("path", { d: linePath("events"), fill: "none", stroke: "var(--data)", "stroke-width": 2.4, "stroke-linejoin": "round" }));
+    root.appendChild(svgEl("path", { d: linePath("orders"), fill: "none", stroke: "var(--signal)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
 
     var last = points.length - 1;
-    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].events), r: 3.6, fill: "var(--accent-2)" }));
-    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].orders), r: 3.6, fill: "var(--accent)" }));
+    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].events), r: 3.6, fill: "var(--data)" }));
+    root.appendChild(svgEl("circle", { cx: x(last), cy: y(points[last].orders), r: 3.6, fill: "var(--signal)" }));
 
     var indexes = [0, last];
     if (points.length > 3) indexes.push(Math.round(last / 2));
@@ -393,7 +350,7 @@
       if (seen[i]) return;
       seen[i] = true;
       var anchor = i === 0 ? "start" : i === last ? "end" : "middle";
-      root.appendChild(svgText(x(i), H - 10, clock(points[i].minute), { "text-anchor": anchor, fill: "var(--muted)", "font-size": 10 }));
+      root.appendChild(svgText(x(i), H - 10, clock(points[i].minute), { "text-anchor": anchor, fill: "var(--fg-dim)", "font-size": 10 }));
     });
 
     host.appendChild(root);
@@ -411,7 +368,7 @@
       empty(host, "No revenue in the current Gold table.");
       return;
     }
-    var colors = ["var(--accent)", "var(--accent-2)", "var(--accent-3)", "#8b5cf6", "#f59e0b"];
+    var colors = ["var(--signal)", "var(--data)", "var(--warn)", "var(--fg-dim)", "var(--fg-faint)"];
     var C = 2 * Math.PI * 62;
     var svg = svgEl("svg", { viewBox: "0 0 190 190", role: "img", "aria-label": "Payment mix by revenue" });
     var t = svgEl("title", {});
@@ -438,8 +395,8 @@
       offset += frac * C;
     });
 
-    svg.appendChild(svgText(95, 91, money(total), { "text-anchor": "middle", fill: "var(--text)", "font-size": 16, "font-weight": 700 }));
-    svg.appendChild(svgText(95, 108, "product revenue", { "text-anchor": "middle", fill: "var(--muted)", "font-size": 9.5 }));
+    svg.appendChild(svgText(95, 91, money(total), { "text-anchor": "middle", fill: "var(--fg)", "font-size": 16, "font-weight": 700 }));
+    svg.appendChild(svgText(95, 108, "product revenue", { "text-anchor": "middle", fill: "var(--fg-dim)", "font-size": 9.5 }));
     host.appendChild(svg);
 
     var legend = document.createElement("div");
@@ -514,20 +471,20 @@
 
     for (var g = 0; g <= 4; g++) {
       var gy = P.t + ih - (g / 4) * ih;
-      svg.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--border)", "stroke-width": 1 }));
-      svg.appendChild(svgText(P.l - 8, gy + 4, money(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--muted)", "font-size": 9.5 }));
+      svg.appendChild(svgEl("line", { x1: P.l, y1: gy, x2: W - P.r, y2: gy, stroke: "var(--line)", "stroke-width": 1 }));
+      svg.appendChild(svgText(P.l - 8, gy + 4, money(Math.round((top * g) / 4)), { "text-anchor": "end", fill: "var(--fg-dim)", "font-size": 9.5 }));
     }
 
     points.forEach(function (p, i) {
       var h = Math.max(((p.revenue || 0) / top) * ih, 1.5);
       var bx = P.l + slot * i + (slot - barW) / 2;
       var by = P.t + ih - h;
-      var rect = svgEl("rect", { x: bx, y: by, width: barW, height: h, rx: 5, fill: "var(--accent-3)" });
+      var rect = svgEl("rect", { x: bx, y: by, width: barW, height: h, rx: 3, fill: "var(--signal)" });
       var rt = svgEl("title", {});
       rt.textContent = clock(p.hour_start) + " · " + money(p.revenue) + " · " + num(p.orders) + " orders";
       rect.appendChild(rt);
       svg.appendChild(rect);
-      svg.appendChild(svgText(bx + barW / 2, H - 12, clock(p.hour_start), { "text-anchor": "middle", fill: "var(--muted)", "font-size": 9.5 }));
+      svg.appendChild(svgText(bx + barW / 2, H - 12, clock(p.hour_start), { "text-anchor": "middle", fill: "var(--fg-dim)", "font-size": 9.5 }));
     });
 
     host.appendChild(svg);
@@ -578,8 +535,9 @@
   // ------------------------------------------------------------- status
   function statusKind(data, error) {
     if (error) return { kind: "error", text: "Disconnected" };
-    if (!data) return { kind: "waiting", text: "Connecting…" };
+    if (!data) return { kind: "waiting", text: state.mode === "snapshot" ? "No snapshot" : "Waiting for data" };
     if (data.status === "waiting") return { kind: "waiting", text: "Waiting for data" };
+    if (state.mode === "snapshot") return { kind: "snapshot", text: "Published snapshot" };
     var generated = Date.parse(data.generated_at);
     var age = isNaN(generated) ? null : (Date.now() - generated) / 1000;
     var limit = Math.max(60, 4 * (data.refresh_seconds || 10));
@@ -598,8 +556,10 @@
       $("statusText").textContent = info.text;
     }
 
+    $("snapshotBanner").hidden = state.mode !== "snapshot";
+
     if (error) {
-      $("updated").textContent = "Cannot reach /api/metrics — retrying every 3 s";
+      $("updated").textContent = "Cannot reach /api/metrics — retrying";
       return;
     }
     if (!data) {
@@ -631,21 +591,24 @@
     renderPipeline(data);
   }
 
+  function arm() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(tick, state.mode === "snapshot" ? SNAPSHOT_MS : REFRESH_MS);
+  }
+
   async function tick() {
     if (state.paused) return;
-    try {
-      var res = await fetch("/api/metrics", { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      var data = await res.json();
+    var data = await loadPayload();
+    if (data) {
       state.last = data;
       state.lastError = null;
       state.lastOkAt = Date.now();
       render(data);
       updateStatus(data, null);
-    } catch (err) {
-      state.lastError = err;
-      updateStatus(state.last, err);
+    } else {
+      updateStatus(state.last, state.lastError);
     }
+    arm();
   }
 
   $("pauseBtn").addEventListener("click", function () {
@@ -667,25 +630,22 @@
     var root = document.documentElement;
     var btn = $("themeToggle");
     var saved = null;
-    try { saved = localStorage.getItem("dashboard-theme"); } catch (e) {}
-    if (saved) root.setAttribute("data-theme", saved);
+    try { saved = localStorage.getItem("p2-theme"); } catch (e) {}
+    if (saved === "paper" || saved === "night") root.setAttribute("data-theme", saved);
     btn.addEventListener("click", function () {
-      var current = root.getAttribute("data-theme");
-      if (!current) current = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      var next = current === "dark" ? "light" : "dark";
+      var next = root.getAttribute("data-theme") === "paper" ? "night" : "paper";
       root.setAttribute("data-theme", next);
-      try { localStorage.setItem("dashboard-theme", next); } catch (e) {}
+      try { localStorage.setItem("p2-theme", next); } catch (e) {}
     });
   })();
 
-  // Tick the relative timestamps every second without refetching.
+  // Relative timestamps tick every second without refetching.
   setInterval(function () {
     if (state.last) updateStatus(state.last, state.lastError);
     else if (state.lastError) updateStatus(null, state.lastError);
   }, 1000);
 
   tick();
-  setInterval(tick, REFRESH_MS);
 })();
 </script>
 </body>
