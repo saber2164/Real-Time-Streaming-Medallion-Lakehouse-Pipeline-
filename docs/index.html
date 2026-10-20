@@ -151,7 +151,7 @@
       <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/actions/workflows/demo-run.yml">▶ Run it in the cloud (free)</a>
       <a class="btn" href="#results">See measured results</a>
       <a class="btn" href="#dashboard">Live dashboard</a>
-      <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
+      <a class="btn" href="CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
     </div>
   </div>
 </header>
@@ -373,7 +373,7 @@ docker-compose run --rm spark spark-submit --packages io.delta:delta-spark_2.12:
 python3 tests/verify_dashboard_metrics.py lakehouse/dashboard/metrics.json</code></pre>
 
     <p>Design, JSON contract, limits and troubleshooting:
-      <a href="../docs/DASHBOARD.md">docs/DASHBOARD.md</a>. Evidence:
+      <a href="DASHBOARD.md">docs/DASHBOARD.md</a>. Evidence:
       <a href="assets/dashboard_live_metrics.json">live API snapshot</a> ·
       <a href="assets/dashboard_live_verify.txt">independent Silver/Gold verification</a> ·
       <a href="assets/dashboard_live_refresh.txt">20 refresh cycles</a>.</p>
@@ -419,7 +419,7 @@ bash tests/verify_recovery.sh</code></pre>
       <a href="http://localhost:4040">localhost:4040</a> &nbsp;·&nbsp; Dashboard ·
       <a href="http://localhost:8501">localhost:8501</a> (after
       <code>scripts/live_dashboard.sh</code>). Full steps in
-      <a href="../docs/RUNBOOK.md">docs/RUNBOOK.md</a>.</p>
+      <a href="RUNBOOK.md">docs/RUNBOOK.md</a>.</p>
   </section>
 
   <section id="cloud">
@@ -441,7 +441,7 @@ bash tests/verify_recovery.sh</code></pre>
     <p class="note">How the trigger works: GitHub Pages is <em>static</em> (it serves files, it
       cannot run code), and a browser must never hold a cloud key. So the button opens GitHub's
       secure "Run workflow" page, which requires your GitHub login — that is the authentication
-      and the safety gate. See <a href="../docs/CLOUD_DEMO.md">docs/CLOUD_DEMO.md</a> for the
+      and the safety gate. See <a href="CLOUD_DEMO.md">docs/CLOUD_DEMO.md</a> for the
       architecture and for the optional one-click upgrade (a tiny serverless function holding a
       scoped token).</p>
   </section>
@@ -450,13 +450,13 @@ bash tests/verify_recovery.sh</code></pre>
     <h2><span class="num">10</span>Links</h2>
     <div class="cta">
       <a class="btn primary" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-">GitHub repository</a>
-      <a class="btn" href="../README.md">README</a>
-      <a class="btn" href="../docs/ARCHITECTURE.md">Architecture</a>
-      <a class="btn" href="../docs/CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
-      <a class="btn" href="../docs/DASHBOARD.md">Dashboard</a>
-      <a class="btn" href="../docs/RUNBOOK.md">Runbook</a>
-      <a class="btn" href="../docs/CLOUD_DEMO.md">Cloud demo</a>
-      <a class="btn" href="../PROJECT_MEMORY.md">Project memory</a>
+      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/README.md">README</a>
+      <a class="btn" href="ARCHITECTURE.md">Architecture</a>
+      <a class="btn" href="CONCEPTS_AND_DESIGN_DECISIONS.md">Concepts &amp; decisions</a>
+      <a class="btn" href="DASHBOARD.md">Dashboard</a>
+      <a class="btn" href="RUNBOOK.md">Runbook</a>
+      <a class="btn" href="CLOUD_DEMO.md">Cloud demo</a>
+      <a class="btn" href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/PROJECT_MEMORY.md">Project memory</a>
     </div>
   </section>
 
@@ -464,7 +464,7 @@ bash tests/verify_recovery.sh</code></pre>
 
 <footer class="wrap">
   <p>Redpanda · PySpark Structured Streaming · Delta Lake — built end to end with measured
-     evidence. Licensed <a href="../LICENSE">MIT</a>. © 2026 Harshit Thakkar.</p>
+     evidence. Licensed <a href="https://github.com/saber2164/Real-Time-Streaming-Medallion-Lakehouse-Pipeline-/blob/main/LICENSE">MIT</a>. © 2026 Harshit Thakkar.</p>
 </footer>
 
 <script>
