@@ -65,12 +65,15 @@ Pages site.
 
 ## Next Actions
 
-Nothing outstanding for the project itself. Optional future work: add a `VACUUM`
-step to physically drop tombstoned files; upgrade the dashboard to incremental
-Gold materialization (`MERGE`/`foreachBatch`) and SSE/WebSocket push; add
-auth/TLS before exposing it beyond localhost. The live demo intentionally
-appends to the canonical tables — reset first if you need the exact documented
-counts.
+Nothing outstanding for the project itself. Optional future work: trigger the
+updated cloud workflow once to exercise the new dashboard steps end-to-end
+(the YAML, Compose config, dashboard server and metrics contract were validated
+locally, but no cloud run has been executed since the dashboard was added); add
+a `VACUUM` step to physically drop tombstoned files; upgrade the dashboard to
+incremental Gold materialization (`MERGE`/`foreachBatch`) and SSE/WebSocket
+push; add auth/TLS before exposing it beyond localhost. The live demo
+intentionally appends to the canonical tables — reset first if you need the
+exact documented counts.
 
 ## Decisions Log
 
